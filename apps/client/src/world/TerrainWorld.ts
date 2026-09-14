@@ -1,3 +1,5 @@
+import { ForestAssets } from './ForestAssets';
+import { TerrainMaterials } from './TerrainMaterials';
 import {
   Color3,
   DynamicTexture,
@@ -19,7 +21,10 @@ import {
   sectorAt,
   sectorKey,
   terrainHeight,
+  collisionHeight,
   trailDistance,
+  waterAt,
+  snowAmount,
 } from '@brumbrum/world-format';
 interface Sector {
   mesh: Mesh;
@@ -39,10 +44,13 @@ export class TerrainWorld {
   private grassMaterial: StandardMaterial;
   private rockMaterial: StandardMaterial;
   readonly markers: Mesh[] = [];
+  private materials?: TerrainMaterials;
   constructor(
     private scene: Scene,
     private addCaster: (mesh: Mesh) => void = () => {},
+    private assets?: ForestAssets,
   ) {
+    if (typeof document !== 'undefined') this.materials = new TerrainMaterials(scene);
     this.terrainMaterial = new StandardMaterial('earth', scene);
     this.terrainMaterial.diffuseColor = Color3.White();
     this.terrainMaterial.specularColor = Color3.Black();
@@ -144,6 +152,10 @@ export class TerrainWorld {
   }
   setWireframe(enabled: boolean): void {
     this.terrainMaterial.wireframe = enabled;
+    if (this.materials) {
+      this.materials.wireframe = enabled;
+      this.materials.materials.forEach((m) => (m.wireframe = enabled));
+    }
   }
   private remove(key: string): void {
     const s = this.sectors.get(key)!;
@@ -153,6 +165,7 @@ export class TerrainWorld {
       p.dispose();
       mesh.dispose();
     }
+    if (s.mesh.material !== this.terrainMaterial) s.mesh.material?.dispose();
     s.mesh.dispose();
     s.trees.forEach((t) => t.dispose());
     this.sectors.delete(key);
@@ -172,15 +185,19 @@ export class TerrainWorld {
           wx = sx * size + lx,
           wz = sz * size + lz;
         positions.push(lx, terrainHeight(wx, wz), lz);
-        uvs.push(lx / 7, lz / 7);
+        uvs.push(lx / size, lz / size);
         const trail = 1 - Math.min(1, Math.max(0, (trailDistance(wx, wz) - 5) / 6));
         const variation = hash(wx, wz) * 0.06;
-        colors.push(
-          0.32 + trail * 0.23 + variation,
-          0.39 + trail * 0.06 + variation,
-          0.22 + trail * 0.1 + variation,
-          1,
-        );
+        if (this.materials) {
+          const snow = snowAmount(wx, wz);
+          colors.push(0.64 + snow * 0.36, 0.68 + snow * 0.32, 0.59 + snow * 0.41, 1);
+        } else
+          colors.push(
+            0.32 + trail * 0.23 + variation,
+            0.39 + trail * 0.06 + variation,
+            0.22 + trail * 0.1 + variation,
+            1,
+          );
       }
     for (let z = 0; z < resolution; z++)
       for (let x = 0; x < resolution; x++) {
@@ -197,7 +214,8 @@ export class TerrainWorld {
     const mesh = new Mesh(`sector ${sx},${sz}`, this.scene);
     data.applyToMesh(mesh);
     mesh.position.set(sx * size, 0, sz * size);
-    mesh.material = this.terrainMaterial;
+    mesh.material = this.materials?.create(sx, sz) ?? this.terrainMaterial;
+    mesh.useVertexColors = true;
     mesh.receiveShadows = true;
     mesh.freezeWorldMatrix();
     const collision = near
@@ -212,16 +230,17 @@ export class TerrainWorld {
       props: PhysicsAggregate[] = [];
     const matrices: number[] = [],
       trunks: number[] = [];
-    for (let i = 0; i < (near ? 130 : 60); i++) {
+    for (let i = 0; i < (near ? 85 : 45); i++) {
       const x = (sx + hash(i + sx * 37, sz * 19)) * size,
         z = (sz + hash(i + 98, sx * 23 + sz)) * size;
       if (
+        waterAt(x, z) !== undefined ||
         trailDistance(x, z) < 14 ||
         jumps.some((j) => Math.abs(j.x - x) < j.width + 9 && Math.abs(j.z - z) < j.length + 15)
       )
         continue;
       const h = 7 + hash(i, sx + sz * 7) * 10,
-        y = terrainHeight(x, z),
+        y = collisionHeight(x, z) - 0.3,
         scale = h / 10;
       Matrix.Compose(
         new Vector3(scale, scale, scale),
@@ -251,41 +270,79 @@ export class TerrainWorld {
         );
       }
     }
-    const layers: Mesh[] = [];
-    for (let layer = 0; layer < 3; layer++) {
-      const cone = MeshBuilder.CreateCylinder(
-        'pine layer',
-        { height: 4.8 - layer * 0.6, diameterTop: 0, diameterBottom: 4.7 - layer, tessellation: 7 },
+    if (this.assets) {
+      const batches = this.assets.trees(matrices, near, `${sx},${sz}`);
+      trees.push(...batches);
+      if (near) batches.forEach((m) => this.addCaster(m));
+    } else {
+      const layers: Mesh[] = [];
+      for (let layer = 0; layer < 3; layer++) {
+        const cone = MeshBuilder.CreateCylinder(
+          'pine layer',
+          {
+            height: 4.8 - layer * 0.6,
+            diameterTop: 0,
+            diameterBottom: 4.7 - layer,
+            tessellation: 7,
+          },
+          this.scene,
+        );
+        cone.position.y = 4 + layer * 2;
+        layers.push(cone);
+      }
+      const canopy = Mesh.MergeMeshes(layers, true)!;
+      canopy.name = `pine batch ${sx},${sz}`;
+      canopy.material = this.foliage;
+      const trunk = MeshBuilder.CreateCylinder(
+        'trunk batch',
+        { height: 6, diameter: 0.45, tessellation: 5 },
         this.scene,
       );
-      cone.position.y = 4 + layer * 2;
-      layers.push(cone);
+      trunk.bakeTransformIntoVertices(Matrix.Translation(0, 3, 0));
+      trunk.material = this.bark;
+      if (matrices.length) {
+        canopy.thinInstanceSetBuffer('matrix', new Float32Array(matrices), 16);
+        trunk.thinInstanceSetBuffer('matrix', new Float32Array(trunks), 16);
+      } else {
+        canopy.setEnabled(false);
+        trunk.setEnabled(false);
+      }
+      trees.push(canopy, trunk);
+      if (near) {
+        this.addCaster(canopy);
+        this.addCaster(trunk);
+      }
     }
-    const canopy = Mesh.MergeMeshes(layers, true)!;
-    canopy.name = `pine batch ${sx},${sz}`;
-    canopy.material = this.foliage;
-    const trunk = MeshBuilder.CreateCylinder(
-      'trunk batch',
-      { height: 6, diameter: 0.45, tessellation: 5 },
-      this.scene,
-    );
-    trunk.bakeTransformIntoVertices(Matrix.Translation(0, 3, 0));
-    trunk.material = this.bark;
-    if (matrices.length) {
-      canopy.thinInstanceSetBuffer('matrix', new Float32Array(matrices), 16);
-      trunk.thinInstanceSetBuffer('matrix', new Float32Array(trunks), 16);
-    } else {
-      canopy.setEnabled(false);
-      trunk.setEnabled(false);
-    }
-    trees.push(canopy, trunk);
     if (near) {
-      this.addCaster(canopy);
-      this.addCaster(trunk);
       const blades = new Mesh(`grass batch ${sx},${sz}`, this.scene),
         gd = new VertexData();
-      gd.positions = [-0.3, 0, 0, 0.1, 0.75, 0, 0.18, 0, 0, 0, 0, -0.2, 0, 0.5, 0.06, 0, 0, 0.2];
-      gd.indices = [0, 1, 2, 3, 4, 5];
+      const bladePositions: number[] = [],
+        bladeIndices: number[] = [];
+      for (let blade = 0; blade < 13; blade++) {
+        const angle = blade * 2.4,
+          x = Math.cos(angle) * 0.19,
+          z = Math.sin(angle) * 0.19,
+          height = 0.22 + hash(blade, 15) * 0.38;
+        const width = 0.014 + hash(blade, 44) * 0.014,
+          i = bladePositions.length / 3;
+        bladePositions.push(
+          x - width,
+          0,
+          z,
+          x + width,
+          0,
+          z,
+          x + Math.sin(angle) * 0.06,
+          height * 0.65,
+          z + 0.03,
+          x + Math.sin(angle) * 0.14,
+          height,
+          z + 0.08,
+        );
+        bladeIndices.push(i, i + 2, i + 1, i + 1, i + 2, i + 3);
+      }
+      gd.positions = bladePositions;
+      gd.indices = bladeIndices;
       const gn: number[] = [];
       VertexData.ComputeNormals(gd.positions, gd.indices, gn);
       gd.normals = gn;
@@ -295,28 +352,34 @@ export class TerrainWorld {
       for (let i = 0; i < 2200; i++) {
         const x = (sx + hash(i + 500, sz * 37)) * size,
           z = (sz + hash(i + 9500, sx * 29)) * size;
-        if (trailDistance(x, z) < 9) continue;
-        const scale = 0.6 + hash(i, z);
+        if (trailDistance(x, z) < 9 || waterAt(x, z) !== undefined || snowAmount(x, z) > 0.4)
+          continue;
+        const scale = 0.6 + hash(i, z) * 0.5;
         Matrix.Compose(
           new Vector3(scale, scale, scale),
           Quaternion.RotationAxis(Vector3.Up(), i),
-          new Vector3(x, terrainHeight(x, z) - 0.08, z),
+          new Vector3(x, collisionHeight(x, z) - 0.04, z),
         ).copyToArray(grassMatrices, grassMatrices.length);
       }
       if (grassMatrices.length)
         blades.thinInstanceSetBuffer('matrix', new Float32Array(grassMatrices), 16);
       trees.push(blades);
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 28; i++) {
         const x = (sx + hash(i + 370, sz)) * size,
           z = (sz + hash(i + 1270, sx)) * size;
-        if (trailDistance(x, z) < 16) continue;
+        if (trailDistance(x, z) < 20 || waterAt(x, z) !== undefined) continue;
         const rock = MeshBuilder.CreateIcoSphere(
           'granite outcrop',
-          { radius: 1, subdivisions: 1, flat: true },
+          { radius: 1, subdivisions: 3, flat: false },
           this.scene,
         );
-        rock.scaling.set(1.5 + hash(i, sx) * 2.5, 1 + hash(i, sz) * 1.5, 2.2);
-        rock.position.set(x, terrainHeight(x, z) + 0.2, z);
+        const large = i % 4 === 0 ? 2 : 1;
+        rock.scaling.set(
+          (2 + hash(i, sx) * 3) * large,
+          (1.5 + hash(i, sz) * 2) * large,
+          (2.5 + hash(i, sx + sz) * 2) * large,
+        );
+        rock.position.set(x, collisionHeight(x, z) - rock.scaling.y * 0.3, z);
         rock.rotation.y = i;
         rock.material = this.rockMaterial;
         rock.receiveShadows = true;

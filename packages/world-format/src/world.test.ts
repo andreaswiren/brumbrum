@@ -1,7 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { sectorAt, localPosition, terrainHeight, jumps, surfaceAt, definition } from './index';
+import {
+  sectorAt,
+  localPosition,
+  terrainHeight,
+  jumps,
+  lakes,
+  collisionHeight,
+  surfaceAt,
+  definition,
+} from './index';
 import { bike, surfaces, world } from '@brumbrum/configuration';
 describe('world coordinates and content', () => {
+  it('joins water edges to banks and uses matching near/far terrain grids', () => {
+    expect(world.farResolution).toBe(world.nearResolution);
+    for (const lake of lakes)
+      for (let i = 0; i < 32; i++) {
+        const angle = (i * Math.PI) / 16;
+        const x = lake.x + Math.cos(angle) * lake.rx,
+          z = lake.z + Math.sin(angle) * lake.rz;
+        expect(terrainHeight(x, z)).toBeCloseTo(lake.level, 4);
+        expect(
+          terrainHeight(
+            lake.x + Math.cos(angle) * lake.rx * 1.04,
+            lake.z + Math.sin(angle) * lake.rz * 1.04,
+          ),
+        ).toBeGreaterThan(lake.level);
+        expect(Number.isFinite(collisionHeight(x, z))).toBe(true);
+      }
+  });
   it('indexes negative boundaries without truncation errors', () => {
     expect(sectorAt(-0.1, -256)).toEqual({ x: -1, z: -1 });
     expect(sectorAt(256, -256.01)).toEqual({ x: 1, z: -2 });

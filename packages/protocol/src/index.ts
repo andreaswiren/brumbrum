@@ -1,5 +1,5 @@
 import type { WorldPosition } from '@brumbrum/world-format';
-export type VehicleKind = 'motorcycle' | 'atv' | 'monster-truck';
+export type VehicleKind = 'motorcycle' | 'atv' | 'monster-truck' | 'snowmobile';
 export interface InputCommand {
   sequence: number;
   tick: number;
@@ -55,5 +55,19 @@ export interface SessionState {
   tick: number;
   players: VehicleState[];
 }
+/** Server-derived arena results. Never accept a client's claimed distance as authoritative. */
+export interface ArenaRunResult {
+  playerId: string;
+  vehicle: VehicleKind;
+  score: number;
+  longestJumpMetres: number;
+  elapsedSeconds: number;
+}
+export interface ArenaLeaderboardEvent {
+  type: 'arena-leaderboard';
+  tick: number;
+  runs: ArenaRunResult[];
+}
 // Future Colyseus room validates inputs and derives scores; no client score packet exists.
-export type ServerEvent = CrashEvent | RespawnEvent | RaceEvent | TrickEvent;
+export type ServerEvent =
+  CrashEvent | RespawnEvent | RaceEvent | TrickEvent | ArenaLeaderboardEvent;

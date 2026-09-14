@@ -1,0 +1,19 @@
+{
+  "name": "Mesh2Motion Human Male",
+  "author": "Quaternius",
+  "distribution": "Mesh2Motion",
+  "license": "CC0-1.0",
+  "licenseFile": "apps/client/public/assets/models/human-rider.LICENSE.md",
+  "sourceArchive": "C:/Users/Andreas/OneDrive/Dev/assets/mesh2motion source/mesh2motion-app-main.zip",
+  "sourceFile": "mesh2motion-app-main/static/models-variation/human-male.glb",
+  "licenseEvidence": "The archive's src/lib/RigModelVariations.ts identifies the male model as Quaternius, CC0. LICENSE-CC0.MD covers models, rigs and animations.",
+  "runtimeFile": "apps/client/public/assets/models/human-rider.glb",
+  "skeleton": "66 authored joints, including clavicles, spine, neck, head, arms, wrists, five articulated fingers per hand, thighs, calves, ankles and toes.",
+  "modifications": [
+    "Source GLB copied unchanged; original anatomical proportions and skin weights retained.",
+    "Runtime rigid joint retargeting fits vehicle grips, seat and footrests without anisotropic bone scaling.",
+    "Finger joints curl around the controls; hands and feet have independent wrist and ankle orientation.",
+    "Runtime vertex colors and procedural fabric UVs provide an orange jersey, charcoal-blue trousers, gloves and boots without changing the authored geometry.",
+    "Motocross protective gear and helmet are separate meshes attached to physical limb proxies."
+  ]
+}

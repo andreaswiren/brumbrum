@@ -1,0 +1,88 @@
+[
+  {
+    "id": "forrest_ground_01",
+    "channel": "diff",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_ground_01/forrest_ground_01_diff_1k.jpg",
+    "source": "https://polyhaven.com/a/forrest_ground_01",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/forrest_ground_01_diff.jpg"
+  },
+  {
+    "id": "forrest_ground_01",
+    "channel": "nor_gl",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_ground_01/forrest_ground_01_nor_gl_1k.jpg",
+    "source": "https://polyhaven.com/a/forrest_ground_01",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/forrest_ground_01_nor_gl.jpg"
+  },
+  {
+    "id": "forrest_ground_01",
+    "channel": "rough",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_ground_01/forrest_ground_01_rough_1k.jpg",
+    "source": "https://polyhaven.com/a/forrest_ground_01",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/forrest_ground_01_rough.jpg"
+  },
+  {
+    "id": "forrest_sand_01",
+    "channel": "diff",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_sand_01/forrest_sand_01_diff_1k.jpg",
+    "source": "https://polyhaven.com/a/forrest_sand_01",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/forrest_sand_01_diff.jpg"
+  },
+  {
+    "id": "forrest_sand_01",
+    "channel": "nor_gl",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_sand_01/forrest_sand_01_nor_gl_1k.jpg",
+    "source": "https://polyhaven.com/a/forrest_sand_01",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/forrest_sand_01_nor_gl.jpg"
+  },
+  {
+    "id": "forrest_sand_01",
+    "channel": "rough",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_sand_01/forrest_sand_01_rough_1k.jpg",
+    "source": "https://polyhaven.com/a/forrest_sand_01",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/forrest_sand_01_rough.jpg"
+  },
+  {
+    "id": "knotted_pine_bark",
+    "channel": "diff",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/knotted_pine_bark/knotted_pine_bark_diff_1k.jpg",
+    "source": "https://polyhaven.com/a/knotted_pine_bark",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/knotted_pine_bark_diff.jpg"
+  },
+  {
+    "id": "knotted_pine_bark",
+    "channel": "nor_gl",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/knotted_pine_bark/knotted_pine_bark_nor_gl_1k.jpg",
+    "source": "https://polyhaven.com/a/knotted_pine_bark",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/knotted_pine_bark_nor_gl.jpg"
+  },
+  {
+    "id": "knotted_pine_bark",
+    "channel": "rough",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/knotted_pine_bark/knotted_pine_bark_rough_1k.jpg",
+    "source": "https://polyhaven.com/a/knotted_pine_bark",
+    "license": "CC0",
+    "file": "apps/client/public/assets/textures/knotted_pine_bark_rough.jpg"
+  },
+  {
+    "id": "pine_sapling_small",
+    "source": "https://polyhaven.com/a/pine_sapling_small",
+    "license": "CC0",
+    "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/pine_sapling_small/pine_sapling_small_1k.gltf",
+    "modifications": "Simplified mesh, embedded textures, GLB runtime LODs"
+  },
+  {
+    "id": "kloofendal_48d_partly_cloudy_puresky",
+    "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "source": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+    "license": "CC0",
+    "file": "apps/client/public/assets/sky/partly-cloudy.hdr"
+  }
+]

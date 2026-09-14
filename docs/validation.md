@@ -1,28 +1,21 @@
-# First implementation validation
+# Validation
 
-Validated locally on Windows with Node 22.14 and the Codex Chromium browser.
+Validated locally on Windows with Node.js 22.14, real Havok WASM and the Codex Chromium browser.
 
 ## Automated
 
-`npm run typecheck`: strict TypeScript checks for client, shared packages and tests.
+`npm test`: 61 tests across world geometry, keyboard/Xbox mapping, real vehicle physics, interpolation, camera, rider motion/skinning, vehicle meshes, snow and scoring.
 
-`npm test`: eleven tests covering negative sector boundaries, coordinate round trips, boundary height continuity, intentional jump profiles, JSON world serialization, surface tuning, real Havok spring equilibrium, acceleration/jump/landing, braking/reset, steering/inverted crash and 30-vs-120-FPS fixed-step consistency.
+Physics coverage includes all four vehicles accelerating/steering/resetting, spring equilibrium, natural takeoff/landing, braking, tilt, wheelies, charged preload, hard landings preserving speed, no airborne steering, penetration recovery, nose-down recovery, physical ragdoll cleanup and automatic stand/run/pickup recovery, long-distance teleports, the boundary ramp/return force, hydroplaning and 30-vs-120-render-FPS consistency.
 
-The physics integration suite loads the real Havok WASM into Babylon's NullEngine and builds the same terrain and motorcycle as the browser. In the first-jump run, full throttle reached about 20 m/s and roughly 1.7 seconds of airtime, followed by a successful landing. These are implementation checks, not a substitute for subjective handling playtests.
+The latest wheelie regression requires the rear wheel to remain supported through the lift and limits peak pitch. The regression permits at most three unsupported substeps during a controlled lift. A separate full-steer test requires deep lean, lateral slip and continued contact. The level-ground motorcycle check exceeds 175 km/h. The boundary test climbs more than 170 m; the escape-force test rises more than 200 m. These controlled tests do not replace subjective long-session playtesting.
 
-`npm run build`: TypeScript plus Vite production bundle. The full Babylon imports produce an approximately 6 MB uncompressed JavaScript entry and a 2 MB WASM asset. Vite reports a bundle-size warning. Modular imports/lazy effects and further asset compression are follow-up optimizations; the warning is not suppressed.
+Rider tests load the actual GLB skeleton and check deformation bounds, exact grip/foot attachment, fixed limb lengths, frame-rate independent smoothing and disposed-during-load cleanup. The human mesh is checked for bounded deformation, compact feet and ragdoll following without bone scaling. Engine tests cover gearbox hysteresis, airborne revving and frame-independent decay to idle after a crash. Scoring tests cover bank-once behavior, physical rotations, clean landing bonuses, small-hop rejection, crash/reset cancellation, unlimited time, horizontal jump distance and persistent personal bests.
 
-`npm audit`: zero known vulnerabilities in the installed lockfile at validation time.
+`npm run typecheck` and `npm run build` pass. The production entry is approximately 6.5 MB uncompressed (1.43 MB gzip), plus 2.09 MB WASM and approximately 20 MB of local art. Vite reports a large-chunk warning; it is not suppressed. `npm audit` reports zero known vulnerabilities at validation time.
 
 ## Browser
 
-- WebGPU initialization and live terrain/rider rendering.
-- Explicit `?renderer=webgl2` fallback initialization and live HUD.
-- Control help open/close, sound on/off, low graphics, camera cycling and reset buttons.
-- Terrain faces, soil detail, spatial trees/grass, shadow rendering and interface visually inspected.
-- No browser console errors during the checked interactions.
-- Built production output launched through `npm run preview` with packaged WASM and WebGPU.
+WebGPU and explicit WebGL2 startup, local asset loading, textured rider appearance, HUD/score display, sound activation, vehicle selector, snowmobile destination and production preview were inspected. The browser detected an Xbox One Game Controller. Keyboard and controller behavior also have adapter/integration coverage; physical controller handling still benefits from the user's live playtests.
 
-Hardware gamepad input and long-session exploration have not been manually verified. Frame-rate results vary with browser, hardware and sector construction. Synchronous near-sector building, procedural-art fidelity, terrain LOD seams and the large initial bundle remain known prototype limitations.
-
-GitHub Actions runs typechecking, tests and production build on pushes and pull requests. A successful local check does not imply the remote workflow has already completed.
+Known limits: synchronous near-sector construction can cause traversal/loading spikes; world art remains a mix of photographs, a skinned human with procedural riding gear and procedural vehicle/prop meshes. Shared multiplayer rankings are protocol definitions, not a running online service. GitHub Actions repeats typechecks, tests and build; local success does not imply its remote run has completed.

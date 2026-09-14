@@ -534,3 +534,200 @@ kbd {
     left: 300px;
   }
 }
+.controller-status {
+  position: absolute;
+  left: 36px;
+  bottom: 62px;
+  font-size: 8px;
+  letter-spacing: 1.2px;
+  color: #dce4c7;
+  text-shadow: 0 2px 4px #000;
+}
+.destinations {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.destinations button {
+  border: 1px solid #c6d16b66;
+  padding: 8px;
+  font-size: 11px;
+}
+.score-panel {
+  position: absolute;
+  right: 36px;
+  top: 325px;
+  width: 228px;
+  padding: 16px;
+  background: #10271fc7;
+  border-top: 2px solid #e5ed80;
+}
+.score-panel strong {
+  font:
+    600 42px 'Barlow Condensed',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.score-unit {
+  font-size: 9px;
+  margin-left: 8px;
+  color: #d8dfc5;
+}
+#run-clock {
+  float: right;
+  font-variant-numeric: tabular-nums;
+}
+#trick-score {
+  font-size: 10px;
+  line-height: 1.7;
+  margin-top: 7px;
+  color: #e5ed80;
+  overflow-wrap: anywhere;
+}
+#new-run {
+  font-size: 9px;
+  letter-spacing: 1px;
+  margin-top: 12px;
+  padding: 0;
+  color: #becbb6;
+}
+#help-panel {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+@media (max-height: 700px) {
+  .score-panel {
+    top: 235px;
+    width: 190px;
+  }
+  .score-panel strong {
+    font-size: 30px;
+  }
+  .ride-card {
+    display: none;
+  }
+}
+@media (max-width: 950px) {
+  .score-panel {
+    width: 190px;
+    top: 290px;
+  }
+}
+@media (max-width: 650px) {
+  .location {
+    display: none;
+  }
+  .score-panel {
+    top: 100px;
+    right: 20px;
+    width: 160px;
+  }
+}
+.jump-record {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  border-top: 1px solid #e5ed8033;
+  padding-top: 12px;
+  font-size: 8px;
+  letter-spacing: 0.8px;
+}
+.jump-record span {
+  display: flex;
+  justify-content: space-between;
+}
+.jump-record b {
+  font-variant-numeric: tabular-nums;
+  color: #f1f6d8;
+}
+.garage {
+  position: absolute;
+  top: 84px;
+  right: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.garage select {
+  background: #1b3028;
+  padding: 7px;
+  border: 1px solid #dce5ca4d;
+  font-size: 10px;
+}
+.destinations {
+  flex-wrap: wrap;
+}
+@media (max-width: 650px) {
+  .garage {
+    top: 65px;
+    right: 20px;
+  }
+}
+.trick-toast {
+  position: absolute;
+  top: 106px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  text-align: center;
+  width: min(480px, 42vw);
+  filter: drop-shadow(0 5px 0 #13251fc9);
+  pointer-events: none;
+}
+.trick-toast-label {
+  display: inline-block;
+  padding: 4px 13px;
+  background: #eaff76;
+  color: #193429;
+  border: 2px solid #193429;
+  border-radius: 7px;
+  transform: rotate(3deg);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.trick-toast strong {
+  display: block;
+  font:
+    900 76px/0.98 'Barlow Condensed',
+    Impact,
+    sans-serif;
+  color: #fff9a6;
+  -webkit-text-stroke: 2px #18372a;
+  text-shadow: 4px 4px 0 #18372a;
+  margin: 5px 0;
+}
+#last-trick-name {
+  display: inline-block;
+  background: #1d382aed;
+  padding: 7px 12px;
+  border: 2px solid #f3f4ca;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  line-height: 1.5;
+  max-width: 100%;
+}
+@media (max-height: 700px) {
+  .trick-toast {
+    top: 85px;
+  }
+  .trick-toast strong {
+    font-size: 56px;
+  }
+}
+@media (max-width: 700px) {
+  .trick-toast {
+    top: 95px;
+    left: 28%;
+    width: 45vw;
+  }
+  .trick-toast strong {
+    font-size: 48px;
+  }
+  #last-trick-name {
+    font-size: 9px;
+  }
+}

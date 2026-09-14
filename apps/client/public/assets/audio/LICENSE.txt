@@ -1,0 +1,7 @@
+engine-loop.wav: "racing car engine sound loops" by domasx2, CC0 1.0.
+Source: https://opengameart.org/content/racing-car-engine-sound-loops
+File: https://opengameart.org/sites/default/files/loop_0.wav
+License: https://creativecommons.org/publicdomain/zero/1.0/
+Downloaded 2026-09-15. Original download retained without modification.
+Runtime normalizes amplitude, smooths the loop seam and adjusts playback pitch.
+The source author states the current loops were remade from a public-domain recording.

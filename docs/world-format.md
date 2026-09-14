@@ -1,11 +1,9 @@
 # World format
 
-`WorldDefinition` is versioned JSON-compatible data with a seed, sector size, spawn positions and jump entities. See `packages/world-format/src/index.ts` for the current definition and pure coordinate functions. The current runtime uses the bundled deterministic definition; external file loading and editing are future work.
+The JSON-compatible world definition contains a seed, sector size, spawns, jumps, lakes and boundary settings. Pure world queries supply terrain, exact triangle interpolation, surface type, water level and snow coverage. Coordinates are metres, +Y up, +Z forward.
 
-Coordinates are metres. +Y is up and the spawn faces +Z. `floor(worldCoordinate / 256)` assigns sectors, including negative coordinates. Local positions always lie in `[0,256)`. Terrain height is a deterministic function shared by rendering, surface detection and reset safety.
+The playground is 6 km square. A 210 m high curved boundary ramp occupies the outer 220 m. Three lake basins meet their surrounding banks at water level. Frost Ridge, centered on (1350,1300), has a snowy circuit and spawn at (1350,920).
 
-Each jump records x/z, height, width, approach length and a name. Its long curved approach and shorter backside create a launch lip. The rendering mesh samples the same function; the Havok mesh collider uses the same vertices, so terrain contact is authoritative within mesh resolution.
+Terrain sectors are 256 m. Both near and far geometry use 48 subdivisions so borders, prop bases and terrain queries agree. Tree geometry still has separate near/far LODs. A 5×5 visible neighborhood surrounds a 3×3 collision neighborhood. Near collision builds synchronously; distant sectors build one per frame. Thin-instance vegetation is partitioned by sector, and props/colliders dispose on unload.
 
-Near terrain uses 48 subdivisions per sector; far terrain uses 16. A 5×5 visible neighborhood includes a 3×3 collidable neighborhood. Trunks, rocks and terrain aggregates dispose when a sector leaves residency; thin instances are partitioned per sector. Neighbor changes rebuild only sectors whose residency or LOD changed.
-
-Future extensions: explicit biome/surface layers, authored height tiles, collision LOD, skirts between resolutions, asynchronous generation, cached geometry, scene-wide floating-origin rebasing, persistence and browser editor tools.
+Trees and grass anchor to interpolated mesh height. Water is hidden when its complete basin is beyond streamed terrain. Snow shares terrain geometry and collision rather than using a floating overlay. Future work includes background generation, residency caching, authored tiles, floating-origin rebasing and a world editor.
