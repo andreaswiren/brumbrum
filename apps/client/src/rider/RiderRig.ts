@@ -460,18 +460,32 @@ export class RiderRig {
         : 0;
     const feet = [-1, 1].map((side) => {
       const step = recoveryFootstep(recovery.stride, side);
+      const pitch = step.pitch * gait;
       const foot = v(
         side * 0.13,
-        anatomy.ankleToSole + step.lift * gait,
+        anatomy.ankleToSole * Math.cos(pitch) +
+          (pitch > 0 ? anatomy.ankleToToe : 0.07) * Math.sin(Math.abs(pitch)) +
+          step.lift * gait,
         standing ? side * 0.18 * (1 - rise) : step.z * gait,
       );
       const world = Vector3.TransformCoordinates(foot, this.root.getWorldMatrix());
       foot.y += collisionHeight(world.x, world.z) - recovery.position.y;
+      const shin = this.parts.get(`shin${side}`)!.mesh;
+      shin.metadata = { ...shin.metadata, recoveryFootPitch: pitch };
       return foot;
     });
+    const sway = Math.sin(recovery.stride) * gait;
+    const pelvisYaw = sway * 0.04,
+      chestYaw = -sway * 0.055;
+    const hipRotation = Matrix.RotationY(pelvisYaw),
+      chestRotation = Matrix.RotationY(chestYaw);
     const hip = v(
-      Math.sin(recovery.stride) * gait * 0.012,
-      0.43 + 0.4 * rise + Math.cos(recovery.stride * 2) * gait * 0.012 - crouch * 0.55,
+      sway * 0.026,
+      0.43 +
+        0.4 * rise -
+        gait * 0.015 +
+        Math.cos(recovery.stride * 2) * gait * 0.018 -
+        crouch * 0.55,
       -crouch * 0.2,
     );
     // Preserve planted foot positions by adjusting the pelvis on slopes instead
@@ -479,7 +493,9 @@ export class RiderRig {
     for (let pass = 0; pass < 4; pass++)
       for (let index = 0; index < 2; index++) {
         const side = index === 0 ? -1 : 1,
-          centre = feet[index].subtract(ridingHipOffset(this.motion.stance, side));
+          centre = feet[index].subtract(
+            Vector3.TransformNormal(ridingHipOffset(this.motion.stance, side), hipRotation),
+          );
         const reach = hip.subtract(centre),
           length = anatomy.thigh + anatomy.shin - 0.004;
         if (reach.length() > length) hip.copyFrom(centre.add(reach.normalize().scale(length)));
@@ -490,21 +506,40 @@ export class RiderRig {
     );
     this.place('pelvis', hip.add(v(0, -0.13, 0)), hip.add(v(0, 0.13, 0)));
     this.place('torso', hip, neck);
+    this.parts.get('pelvis')!.mesh.rotationQuaternion = Quaternion.RotationAxis(
+      Vector3.Up(),
+      pelvisYaw,
+    );
+    const torso = this.parts.get('torso')!.mesh;
+    torso.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), chestYaw).multiply(
+      torso.rotationQuaternion!,
+    );
+    this.root.metadata = {
+      ...this.root.metadata,
+      recoveryHandGrip: state.phase === 'lifting' ? Math.min(1, recovery.elapsed / 0.35) : 0,
+    };
     const headBase = neck.add(v(0, 0.1162, 0.0628));
     this.place('head', headBase, headBase.add(v(0, anatomy.head, 0)));
     for (let index = 0; index < 2; index++) {
       const side = index === 0 ? -1 : 1,
         foot = feet[index];
-      const hipJoint = hip.add(ridingHipOffset(this.motion.stance, side));
+      const hipJoint = hip.add(
+        Vector3.TransformNormal(ridingHipOffset(this.motion.stance, side), hipRotation),
+      );
       const knee = bendLimb(hipJoint, foot, anatomy.thigh, anatomy.shin, v(side * 0.12, 0, 1));
       this.place(`thigh${side}`, knee, hipJoint);
       this.place(`shin${side}`, foot, knee);
-      const shoulder = neck.add(v(side * anatomy.shoulderHalfWidth, -0.0066, -0.0138));
-      const swing = Math.sin(recovery.stride + (side < 0 ? Math.PI : 0)) * gait;
+      const shoulder = neck.add(
+        Vector3.TransformNormal(
+          v(side * anatomy.shoulderHalfWidth, -0.0066, -0.0138),
+          chestRotation,
+        ),
+      );
+      const swing = (recoveryFootstep(recovery.stride, side).z / 0.35) * gait;
       const walkingHand = v(
-        side * 0.2,
-        hip.y + 0.12 + Math.abs(swing) * 0.05,
-        -swing * 0.22 + 0.035,
+        side * 0.19 + sway * 0.012,
+        hip.y - 0.02 + Math.max(0, -swing) * 0.07,
+        -swing * 0.26 + 0.055,
       );
       const hand =
         state.phase === 'lifting'
@@ -525,7 +560,7 @@ export class RiderRig {
         hand,
         anatomy.upperArm,
         anatomy.forearm,
-        v(side * 0.25, -0.1, -1),
+        v(side * 0.12, 0.04, 1),
       );
       this.place(`upperArm${side}`, elbow, shoulder);
       this.place(`forearm${side}`, hand, elbow);

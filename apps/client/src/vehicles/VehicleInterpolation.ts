@@ -22,6 +22,8 @@ export class VehicleInterpolation {
     this.currentRotation.copyFrom(vehicle.visual.chassis.rotationQuaternion!);
     if (Vector3.DistanceSquared(this.previous, this.current) > 100) return;
     Vector3.LerpToRef(this.previous, this.current, alpha, vehicle.position);
+    // A shallow visual rut gives loose-ground slides weight; Havok contact stays unchanged.
+    vehicle.position.y -= vehicle.rutDepth || 0;
     Quaternion.SlerpToRef(
       this.previousRotation,
       this.currentRotation,

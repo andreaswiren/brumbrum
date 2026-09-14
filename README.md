@@ -46,6 +46,10 @@ Select a vehicle using the **VEHICLE** menu. Snowmobile selection takes you to F
 
 ## Playground
 
+- **GRAPHICS** opens persistent quality and image-style settings: Natural, Vivid, Saturated, Energetic and Filmic. Adjust exposure, saturation, bloom, vehicle-focused depth of field, ambient occlusion, MSAA/FXAA, vegetation and animated blue water independently.
+- Forest sectors mix multiple imported pine, young-pine and snag meshes, with six gray rock assets embedded into terrain. Higher vegetation settings add denser trees and ground cover.
+- Fast impacts break trees into falling trunks, stumps and chips; monster trucks break typical trees around 25–35 km/h, while lighter vehicles need substantially more speed. Broken trees stay down during the session. All vehicles throw visible dust and debris while driving on loose ground, with stronger spray during slides.
+
 - Assisted Havok suspension with slope following, deep corner lean with progressive loose-surface slides, controlled wheelies, preload and forgiving landings. Motorcycle level-ground speed is over 175 km/h in the integration test.
 - Compound chassis/wheel colliders and a swept terrain floor guard. Physics-safe reset/teleport synchronization prevents spurious suspension torque. Fixed-step render interpolation smooths movement between simulation ticks.
 - Continuous skinned Quaternius human from the supplied Mesh2Motion library, with 66 joints, articulated hands/fingers/feet and original human proportions, with vehicle-specific riding poses, fixed hand/foot contacts, forward preload crouch and landing absorption. The rider sits on the saddle, rests a foot on terrain at a stop and subtly breathes; throttle smoothly returns the foot to its peg. Physical crashes detach an eleven-body, ten-joint ragdoll; the character mesh follows it, then gets up, runs back and lifts the vehicle to continue. R skips recovery.

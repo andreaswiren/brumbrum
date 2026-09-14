@@ -4,7 +4,7 @@ Validated locally on Windows with Node.js 22.14, real Havok WASM and the Codex C
 
 ## Automated
 
-`npm test`: 73 tests across world geometry, keyboard/Xbox mapping, real vehicle physics, interpolation, camera, rider motion/skinning, vehicle meshes, snow and scoring.
+`npm test`: 92 tests across world geometry, keyboard/Xbox mapping, real vehicle physics, interpolation, camera, rider motion/skinning, vehicle meshes, snow, scoring, graphics preferences, imported props, tree destruction and surface particles.
 
 Physics coverage includes all four vehicles accelerating/steering/resetting, spring equilibrium, natural takeoff/landing, braking, tilt, wheelies, charged preload, hard landings preserving speed, no airborne steering, penetration recovery, nose-down recovery, physical ragdoll cleanup and automatic stand/walk/pickup recovery, long-distance teleports, the boundary ramp/return force, hydroplaning and 30-vs-120-render-FPS consistency.
 
@@ -12,9 +12,13 @@ The latest wheelie regression requires the rear wheel to remain supported throug
 
 Steering regressions check separate suspension/axle pivots on the bike, ATV and truck, including inside/outside wheel angles. Real Havok checks cover hillside corners, held steering across takeoff versus a fresh air input, the supported idle stance withdrawing under throttle, and four-wheel contact on a banked truck platform. Rider tests load the actual GLB skeleton and check deformation bounds, exact grip/foot attachment, fixed limb lengths, frame-rate independent smoothing and disposed-during-load cleanup. Recovery tests also check connected joints through get-up and walking and stationary stance feet. The human mesh is checked for bounded deformation, compact feet, actual saddle contact, toe clearance against terrain, and ragdoll following without bone scaling. Engine tests cover gearbox hysteresis, airborne revving and frame-independent decay to idle after a crash. Scoring tests cover bank-once behavior, physical rotations, clean landing bonuses, small-hop rejection, crash/reset cancellation, unlimited time, horizontal jump distance, height above takeoff with peak retention, and persistent personal bests.
 
-`npm run typecheck` and `npm run build` pass. The production entry is approximately 6.5 MB uncompressed (1.44 MB gzip), plus 2.09 MB WASM and approximately 20 MB of local art. Vite reports a large-chunk warning; it is not suppressed. `npm audit` reports zero known vulnerabilities at validation time.
+`npm run typecheck` and `npm run build` pass. The production entry is approximately 6.52 MB uncompressed (1.45 MB gzip), plus 2.09 MB WASM and local art. Vite reports a large-chunk warning; it is not suppressed. `npm audit` reports zero known vulnerabilities at validation time.
 
 ## Browser
+
+Stationary development review pages isolate the effects from live gamepad input: `/dev/graphics.html` (AO/DOF comparison, also `?renderer=webgl2`), `/dev/rider-motion.html`, `/dev/surface-spray.html` and `/dev/trees.html`. AO was checked off/on for visible ground contacts, and DOF for focused foreground versus blurred background, in both WebGPU and WebGL2. All four vehicle spray plumes, revised walking poses and a monster truck knocking down an authored tree were visually inspected. These pages are development-only.
+
+New regressions cover continuous soil particles at ordinary throttle, stronger slide emission, no emission on asphalt/airborne, slope-relative trajectories and current emitter transforms. Real Havok raycasts verify that a tree's blocking collider disappears when broken while its visible mesh remains. Tree tests cover low-speed resistance, vehicle-dependent thresholds and streamed-state persistence. Banked-corner tests require sustained support, steering and speed without a crash.
 
 WebGPU and explicit WebGL2 startup, local asset loading, textured rider appearance, HUD/score display, sound activation, vehicle selector, snowmobile destination and production preview were inspected. The browser detected an Xbox One Game Controller. Cascaded shadows and contact occlusion were inspected, including high/low quality switching in WebGL2 without reported shader errors. Keyboard and controller behavior also have adapter/integration coverage; physical controller handling still benefits from the user's live playtests.
 

@@ -12,14 +12,17 @@ it('interpolates display poses and restores the exact simulation transform', () 
     visual: { chassis },
     resetId: 0,
     crashed: false,
+    rutDepth: 0.065,
   } as Motorcycle;
   const interpolation = new VehicleInterpolation();
   interpolation.capture(vehicle);
   chassis.position.x = 4;
   interpolation.render(vehicle, 0.25);
   expect(chassis.position.x).toBe(1);
+  expect(chassis.position.y).toBeCloseTo(-0.065);
   interpolation.restore();
   expect(chassis.position.x).toBe(4);
+  expect(chassis.position.y).toBe(0);
   vehicle.resetId++;
   interpolation.render(vehicle, 0.5);
   expect(chassis.position.x).toBe(4);

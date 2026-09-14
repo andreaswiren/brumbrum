@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Destructible tree review</title>
+  <style>
+    body {
+      margin: 0;
+      background: #94afc0;
+      font: 14px system-ui;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    aside {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      background: #fffdf0eb;
+      padding: 16px;
+      border-radius: 12px;
+      max-width: 370px;
+    }
+    button,
+    select,
+    input {
+      margin: 5px;
+      padding: 6px;
+    }
+    p {
+      margin: 7px 0;
+    }
+  </style>
+  <canvas id="view"></canvas>
+  <aside>
+    <b>Destructible tree review</b>
+    <p>Drag to orbit. Impact the centre tree to watch its fall, stump and wood chips.</p>
+    <select id="vehicle">
+      <option value="monster">Monster truck</option>
+      <option value="bike">Motocross</option>
+      <option value="atv">ATV</option>
+    </select>
+    <label
+      >Speed <input id="speed" type="range" min="2" max="40" value="12" /><output id="speed-value"
+        >43 km/h</output
+      ></label
+    >
+    <p>
+      <button id="drive" disabled>Drive into tree</button><button id="reset">Reset trees</button>
+    </p>
+    <p id="status">Loading authored forest meshes…</p>
+  </aside>
+  <script type="module">
+    import {
+      ArcRotateCamera,
+      Color3,
+      Color4,
+      DirectionalLight,
+      Engine,
+      HemisphericLight,
+      Matrix,
+      MeshBuilder,
+      Quaternion,
+      Scene,
+      ShadowGenerator,
+      StandardMaterial,
+      Vector3,
+    } from '@babylonjs/core';
+    import { ForestAssets } from '../src/world/ForestAssets.ts';
+    import { TreeDestruction } from '../src/world/TreeDestruction.ts';
+    import { createFourWheelVisual } from '../src/vehicles/VehicleModels.ts';
+    import { createBikeVisual } from '../src/vehicles/BikeVisual.ts';
+    const canvas = document.querySelector('#view'),
+      engine = new Engine(canvas, true),
+      scene = new Scene(engine);
+    scene.clearColor = new Color4(0.56, 0.69, 0.76, 1);
+    const camera = new ArcRotateCamera(
+      'review camera',
+      -Math.PI * 0.66,
+      1.04,
+      37,
+      new Vector3(0, 4, 0),
+      scene,
+    );
+    camera.attachControl(canvas, true);
+    camera.wheelPrecision = 12;
+    new HemisphericLight('sky fill', new Vector3(0, 1, 0), scene).intensity = 0.62;
+    const sun = new DirectionalLight('sun', new Vector3(-0.4, -1, 0.3), scene);
+    sun.position.set(15, 30, -12);
+    sun.intensity = 1.2;
+    const shadows = new ShadowGenerator(2048, sun);
+    shadows.usePercentageCloserFiltering = true;
+    const ground = MeshBuilder.CreateGround('clearing', { width: 100, height: 100 }, scene),
+      soil = new StandardMaterial('earth', scene);
+    soil.diffuseColor = new Color3(0.32, 0.38, 0.23);
+    soil.specularColor.setAll(0);
+    ground.material = soil;
+    ground.receiveShadows = true;
+    const assets = await ForestAssets.load(scene),
+      destruction = new TreeDestruction(
+        scene,
+        (mesh) => shadows.addShadowCaster(mesh),
+        () => 0,
+      );
+    const matrices = [],
+      definitions = [];
+    let colliderCount = 3;
+    for (let i = 0; i < 3; i++) {
+      const x = (i - 1) * 11,
+        h = [8, 12, 17][i];
+      Matrix.Compose(
+        new Vector3(h / 10, h / 10, h / 10),
+        Quaternion.Identity(),
+        new Vector3(x, 0, 0),
+      ).copyToArray(matrices, matrices.length);
+      definitions.push({
+        id: `review-${i}`,
+        position: new Vector3(x, 0, 0),
+        height: h,
+        diameter: (0.65 * h) / 10,
+        removeCollider: () => {
+          colliderCount--;
+        },
+      });
+    }
+    const batches = assets.trees(matrices, true, 'destruction review');
+    batches.forEach((mesh) => shadows.addShadowCaster(mesh));
+    destruction.register('review', definitions, batches);
+    let model,
+      kind = 'monster',
+      running = false;
+    const velocity = Vector3.Zero(),
+      position = new Vector3(0, 2, -16);
+    function choose() {
+      if (model) model.chassis.dispose(false, true);
+      kind = document.querySelector('#vehicle').value;
+      model = kind === 'bike' ? createBikeVisual(scene) : createFourWheelVisual(scene, kind);
+      model.riderRig.setVehicle(kind);
+      position.set(0, kind === 'monster' ? 2 : kind === 'atv' ? 0.9 : 0.58, -16);
+      model.chassis.position.copyFrom(position);
+      model.meshes.forEach((mesh) => shadows.addShadowCaster(mesh));
+      running = false;
+    }
+    choose();
+    document.querySelector('#vehicle').addEventListener('change', choose);
+    document
+      .querySelector('#speed')
+      .addEventListener(
+        'input',
+        () =>
+          (document.querySelector('#speed-value').textContent =
+            `${Math.round(Number(document.querySelector('#speed').value) * 3.6)} km/h`),
+      );
+    document.querySelector('#drive').disabled = false;
+    document.querySelector('#drive').onclick = () => {
+      position.z = -16;
+      running = true;
+      document.querySelector('#status').textContent = 'Approaching centre trunk…';
+    };
+    document.querySelector('#reset').onclick = () => location.reload();
+    document.querySelector('#status').textContent =
+      'Ready. Monster truck breaks this trunk at about 27 km/h; bike needs about 113 km/h.';
+    engine.runRenderLoop(() => {
+      const dt = Math.min(0.035, engine.getDeltaTime() / 1000),
+        speed = Number(document.querySelector('#speed').value);
+      velocity.set(0, 0, running ? speed : 0);
+      const broken = destruction.interact(position, velocity, kind, dt);
+      if (broken)
+        document.querySelector('#status').textContent =
+          `Tree breaking. ${colliderCount} standing trunks remain.`;
+      if (running) {
+        position.z += speed * dt;
+        const stop = kind === 'monster' ? -2.9 : -1.3;
+        if (position.z > stop && !destruction.isBroken('review-1')) {
+          position.z = stop;
+          running = false;
+          document.querySelector('#status').textContent =
+            'Impact too gentle for this vehicle: trunk holds.';
+        }
+        if (position.z > 20) running = false;
+      }
+      model.chassis.position.copyFrom(position);
+      model.wheels.forEach(
+        (w) => (w.rotation.x += (velocity.z * dt) / (kind === 'monster' ? 1.05 : 0.36)),
+      );
+      model.riderRig.pose(0, velocity.z, running ? 1 : 0, 0, 0, dt);
+      scene.render();
+    });
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</html>

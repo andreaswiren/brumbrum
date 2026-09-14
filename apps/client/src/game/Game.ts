@@ -28,6 +28,10 @@ import type { VehicleKind } from '../vehicles/VehicleModels';
 import { VehicleInterpolation } from '../vehicles/VehicleInterpolation';
 import { SurfaceEffects } from '../world/SurfaceEffects';
 import { createGroundShadows, createGroundOcclusion } from '../world/GroundLighting';
+import { GraphicsPipeline } from '../graphics/GraphicsPipeline';
+import { loadVisualSettings, type VisualSettings } from '../graphics/VisualSettings';
+import { GraphicsMenu } from '../ui/GraphicsMenu';
+import { RockAssets } from '../world/RockAssets';
 export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   let engine: AbstractEngine;
   let renderer = 'WEBGL2';
@@ -82,6 +86,10 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
     /* Storage is optional. */
   }
   const score = new TrickScore(storage);
+  const preferences = loadVisualSettings(storage);
+  let finishing: GraphicsPipeline | undefined;
+  let appliedQuality = '';
+  let graphicsMenu: GraphicsMenu;
   const interpolation = new VehicleInterpolation();
   let remainder = 0,
     frameDt = physics.step as number;
@@ -131,20 +139,41 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
       vehicle?.setDebug(hud.debug);
     },
     quality: (v) => {
-      const preset = graphics[v as GraphicsPreset];
-      if (!preset) return;
-      engine.setHardwareScalingLevel(preset.pixelRatio);
+      graphicsMenu?.setQuality(v as GraphicsPreset);
+    },
+  });
+  const applyGraphics = (settings: VisualSettings) => {
+    if (!camera) return;
+    if (appliedQuality !== settings.quality) {
+      engine.setHardwareScalingLevel(graphics[settings.quality].pixelRatio);
       const casters =
         shadows.getShadowMap()?.renderList?.filter((mesh) => !mesh.isDisposed()) ?? [];
       shadows.dispose();
-      shadows = createGroundShadows(scene, sun, v as GraphicsPreset);
+      shadows = createGroundShadows(scene, sun, settings.quality);
       casters.forEach((mesh) => shadows.addShadowCaster(mesh, false));
       occlusion?.dispose(true);
-      occlusion = camera
-        ? createGroundOcclusion(scene, camera.camera, v as GraphicsPreset)
-        : undefined;
-    },
-  });
+      occlusion =
+        settings.occlusion > 0
+          ? createGroundOcclusion(
+              scene,
+              camera.camera,
+              settings.quality === 'low' ? 'medium' : settings.quality,
+            )
+          : undefined;
+      appliedQuality = settings.quality;
+    }
+    if (settings.occlusion > 0 && !occlusion)
+      occlusion = createGroundOcclusion(
+        scene,
+        camera.camera,
+        settings.quality === 'low' ? 'medium' : settings.quality,
+      );
+    if (occlusion) occlusion.totalStrength = settings.occlusion * 2;
+    world?.setVegetationDensity(settings.vegetation);
+    lakes.setAppearance(settings.waterBlue, settings.waterMotion);
+    finishing?.apply(settings);
+  };
+  graphicsMenu = new GraphicsMenu(preferences, applyGraphics, storage);
   const unlockAudio = (event: Event) => {
     if ((event.target as HTMLElement)?.closest?.('#sound')) return;
     void audio
@@ -162,7 +191,7 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   scene.enablePhysics(new Vector3(0, physics.gravity, 0), new HavokPlugin(true, havok));
   scene.getPhysicsEngine()!.setTimeStep(physics.step);
   scene.getPhysicsEngine()!.setSubTimeStep(physics.step * 1000);
-  const forest = await ForestAssets.load(scene);
+  const [forest, rocks] = await Promise.all([ForestAssets.load(scene), RockAssets.load(scene)]);
   const sky = new HDRCubeTexture(
     '/assets/sky/partly-cloudy.hdr',
     scene,
@@ -178,16 +207,36 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   if (skybox) skybox.applyFog = false;
   const lakes = new Lakes(scene);
   const surfaceEffects = new SurfaceEffects(scene);
-  world = new TerrainWorld(scene, (mesh) => shadows.addShadowCaster(mesh), forest);
+  world = new TerrainWorld(
+    scene,
+    (mesh) => shadows.addShadowCaster(mesh),
+    forest,
+    preferences.vegetation,
+    rocks,
+  );
   vehicle = new Motorcycle(scene);
   await vehicle.visual.riderRig.loadCharacter();
   camera = new ChaseCamera(scene, vehicle);
-  occlusion = createGroundOcclusion(scene, camera.camera, 'high');
+  finishing = new GraphicsPipeline(scene, camera.camera);
+  applyGraphics(preferences);
   vehicle.visual.meshes.forEach((m) => shadows.addShadowCaster(m));
   vehicle.visual.riderRig.meshes.forEach((m) => shadows.addShadowCaster(m));
   scene.onBeforePhysicsObservable.add(() => {
     interpolation.capture(vehicle);
     remainder = Math.max(0, remainder - physics.step);
+    if (
+      world.interactVehicle(
+        vehicle.position,
+        vehicle.crashed ? Vector3.Zero() : vehicle.velocity,
+        vehicle.kind,
+        physics.step,
+      )
+    )
+      audio.impact({
+        kind: 'obstacle',
+        strength: Math.max(5, vehicle.speed * 0.4),
+        surface: 'wood',
+      });
     vehicle.step(input.actions);
   });
   scene.onAfterPhysicsObservable.add(() => {
@@ -211,16 +260,28 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   scene.onBeforeRenderObservable.add(() => {
     interpolation.render(vehicle, Math.min(1, remainder / physics.step));
     camera.update(frameDt);
+    finishing?.focus(Vector3.Distance(camera.camera.position, vehicle.position));
     surfaceEffects.update(vehicle, input.actions.throttle);
   });
   scene.onAfterRenderObservable.add(() => interpolation.restore());
   hud.ready();
   engine.runRenderLoop(() => {
     if (document.hidden) return;
+    scene.physicsEnabled = !graphicsMenu.dialog.open;
     const dt = Math.min(engine.getDeltaTime() / 1000, physics.step * physics.maxFrameSteps);
     frameDt = dt;
-    remainder += dt;
+    if (!graphicsMenu.dialog.open) remainder += dt;
     input.update();
+    if (graphicsMenu.dialog.open) {
+      input.actions.throttle =
+        input.actions.brake =
+        input.actions.steer =
+        input.actions.pitch =
+        input.actions.roll =
+          0;
+      input.actions.preload = input.actions.rearBrake = false;
+      input.actions.cameraX = input.actions.cameraY = 0;
+    }
     camera.orbit(input.actions.cameraX ?? 0, input.actions.cameraY ?? 0, dt);
     if (input.consume('KeyR')) vehicle.reset();
     if (input.consume('Home')) vehicle.reset(true);

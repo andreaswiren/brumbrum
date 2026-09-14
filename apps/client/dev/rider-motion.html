@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Rider motion review</title>
+    <style>
+      body {
+        margin: 0;
+        background: #283339;
+        color: #fff;
+        font: 14px system-ui;
+      }
+      canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      aside {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: #142027dc;
+        padding: 16px;
+        border-radius: 10px;
+      }
+      button,
+      select {
+        padding: 8px;
+        margin: 3px;
+      }
+      p {
+        margin: 8px 0;
+      }
+      #phase {
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view" aria-label="Rider animation preview"></canvas>
+    <aside>
+      <b>Rider motion review</b>
+      <p>Drag to orbit · scroll to zoom</p>
+      <button id="replay">Replay recovery</button><button id="pause">Pause</button
+      ><select id="speed" aria-label="Playback speed">
+        <option value="1">Normal speed</option>
+        <option value="0.35">Slow motion</option>
+      </select>
+      <p id="phase">Loading rider…</p>
+    </aside>
+    <script type="module">
+      import {
+        Engine,
+        Scene,
+        ArcRotateCamera,
+        HemisphericLight,
+        DirectionalLight,
+        Color3,
+        MeshBuilder,
+        Quaternion,
+        Vector3,
+        HavokPlugin,
+        VertexBuffer,
+        VertexData,
+        ShadowGenerator,
+      } from '@babylonjs/core';
+      import HavokPhysics from '@babylonjs/havok';
+      import havokWasm from '@babylonjs/havok/lib/esm/HavokPhysics.wasm?url';
+      import { RiderRig } from '/src/rider/RiderRig.ts';
+      import { collisionHeight } from '@brumbrum/world-format';
+      const canvas = document.querySelector('#view'),
+        engine = new Engine(canvas, true),
+        scene = new Scene(engine);
+      const camera = new ArcRotateCamera(
+        'review',
+        -Math.PI / 3,
+        1.25,
+        4.8,
+        new Vector3(0, 1, 12),
+        scene,
+      );
+      camera.attachControl(canvas, true);
+      camera.lowerRadiusLimit = 2;
+      camera.upperRadiusLimit = 10;
+      const fill = new HemisphericLight('fill', Vector3.Up(), scene);
+      fill.intensity = 0.65;
+      const sun = new DirectionalLight('sun', new Vector3(-0.5, -1, 0.4), scene);
+      sun.position.set(5, 20, 0);
+      sun.intensity = 2;
+      const shadows = new ShadowGenerator(1024, sun);
+      shadows.usePercentageCloserFiltering = true;
+      const ground = MeshBuilder.CreateGround(
+        'terrain',
+        { width: 100, height: 100, subdivisions: 100, updatable: true },
+        scene,
+      );
+      const vertices = ground.getVerticesData(VertexBuffer.PositionKind);
+      for (let i = 0; i < vertices.length; i += 3)
+        vertices[i + 1] = collisionHeight(vertices[i], vertices[i + 2]);
+      ground.updateVerticesData(VertexBuffer.PositionKind, vertices);
+      const normals = [];
+      VertexData.ComputeNormals(vertices, ground.getIndices(), normals);
+      ground.updateVerticesData(VertexBuffer.NormalKind, normals);
+      ground.receiveShadows = true;
+      const havok = await HavokPhysics({ locateFile: () => havokWasm });
+      scene.enablePhysics(new Vector3(0, -9.81, 0), new HavokPlugin(true, havok));
+      const chassis = MeshBuilder.CreateBox('anchor', {}, scene);
+      chassis.isVisible = false;
+      chassis.position.set(0, collisionHeight(0, 12) + 0.5, 12);
+      chassis.rotationQuaternion = Quaternion.Identity();
+      const rig = new RiderRig(scene, chassis);
+      await rig.loadCharacter();
+      rig.meshes.forEach((mesh) => shadows.addShadowCaster(mesh));
+      let paused = false;
+      function replay() {
+        paused = false;
+        document.querySelector('#pause').textContent = 'Pause';
+        rig.reset();
+        rig.eject(Vector3.Zero(), Vector3.Zero());
+        for (const part of rig.parts.values())
+          part.aggregate?.body.setLinearVelocity(Vector3.Zero());
+        rig.beginRecovery();
+      }
+      document.querySelector('#replay').onclick = replay;
+      document.querySelector('#pause').onclick = () => {
+        paused = !paused;
+        document.querySelector('#pause').textContent = paused ? 'Resume' : 'Pause';
+      };
+      replay();
+      engine.runRenderLoop(() => {
+        const dt =
+          Math.min(0.04, engine.getDeltaTime() / 1000) *
+          Number(document.querySelector('#speed').value);
+        if (!paused) {
+          const state = rig.updateRecovery(
+            dt,
+            new Vector3(0, 0, 32),
+            new Vector3(1, collisionHeight(1, 32), 32),
+          );
+          document.querySelector('#phase').textContent = state.phase;
+        }
+        camera.target.copyFrom(rig.position).addInPlace(new Vector3(0, 0.1, 0));
+        scene.render();
+      });
+      window.addEventListener('resize', () => engine.resize());
+    </script>
+  </body>
+</html>

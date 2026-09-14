@@ -804,3 +804,116 @@ kbd {
     font-size: 9px;
   }
 }
+.graphics-menu {
+  width: min(720px, calc(100vw - 28px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  background: #182b2a;
+  color: #f4f3e8;
+  border: 1px solid #a9bc9c;
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 25px 100px #000a;
+}
+.graphics-menu::backdrop {
+  background: #07161588;
+  backdrop-filter: blur(3px);
+}
+.graphics-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+}
+.graphics-heading h2 {
+  margin: 5px 0 0;
+  font:
+    700 32px 'Barlow Condensed',
+    sans-serif;
+}
+.graphics-heading small {
+  letter-spacing: 2px;
+  color: #dcea77;
+}
+#close-graphics {
+  font-size: 30px;
+}
+.graphics-menu p {
+  color: #c1d0c9;
+  line-height: 1.5;
+}
+.graphics-menu label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.graphics-menu select {
+  width: 100%;
+  border: 1px solid #78918a;
+  border-radius: 6px;
+  background: #0d201f;
+  padding: 8px;
+}
+.graphics-presets,
+.graphics-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.graphics-controls {
+  margin-top: 22px;
+}
+.graphics-menu fieldset {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #506b61;
+  border-radius: 9px;
+  min-width: 0;
+}
+.graphics-menu legend {
+  color: #e2ed89;
+  font-weight: 700;
+  padding: 0 6px;
+}
+.graphics-slider {
+  margin-bottom: 12px;
+}
+.graphics-slider > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.graphics-slider output {
+  font-variant-numeric: tabular-nums;
+  color: #deea91;
+}
+.graphics-menu input {
+  accent-color: #d5e976;
+  pointer-events: auto;
+  width: 100%;
+}
+.graphics-menu .graphics-toggle {
+  display: flex;
+  align-items: center;
+  margin-top: 18px;
+}
+.graphics-toggle input {
+  width: auto;
+}
+.graphics-note {
+  font-size: 12px;
+}
+#reset-graphics {
+  border: 1px solid #c4d87e;
+  padding: 9px 14px;
+  border-radius: 6px;
+}
+@media (max-width: 500px) {
+  .graphics-presets,
+  .graphics-controls {
+    grid-template-columns: 1fr;
+  }
+  .graphics-menu {
+    padding: 18px;
+  }
+}

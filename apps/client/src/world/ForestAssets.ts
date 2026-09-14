@@ -8,11 +8,14 @@ import {
   VertexBuffer,
 } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
+import { ForestExtraAssets } from './ForestExtraAssets';
 export class ForestAssets {
   private near: Mesh[] = [];
   private far: Mesh[] = [];
+  private extras?: ForestExtraAssets;
   static async load(scene: Scene): Promise<ForestAssets> {
     const library = new ForestAssets();
+    const extras = ForestExtraAssets.load(scene);
     for (const [name, target] of [
       ['pine', library.near],
       ['pine-far', library.far],
@@ -72,20 +75,37 @@ export class ForestAssets {
       }
       for (const m of result.meshes) if (!selected.includes(m as Mesh)) m.dispose(false, false);
     }
+    library.extras = await extras;
     return library;
   }
   trees(matrices: number[], near: boolean, name: string): Mesh[] {
     if (!matrices.length) return [];
-    return (near ? this.near : this.far).map((source) => {
+    const groups: number[][] = [[], [], [], []];
+    for (let offset = 0; offset < matrices.length; offset += 16) {
+      const index = offset / 16;
+      const variant = index % 13 === 0 ? 3 : index % 3;
+      groups[variant].push(...matrices.slice(offset, offset + 16));
+    }
+    const result = (groups[0].length ? (near ? this.near : this.far) : []).map((source) => {
       const clone = source.clone(`pine batch ${name}`, null, true)!;
       // WebGPU vertex layouts cache instance buffers on geometry. Each spatial
       // batch owns its geometry so a neighboring sector cannot overwrite it.
       clone.makeGeometryUnique();
       clone.setEnabled(true);
-      clone.thinInstanceSetBuffer('matrix', new Float32Array(matrices), 16);
+      clone.thinInstanceSetBuffer('matrix', new Float32Array(groups[0]), 16);
       clone.receiveShadows = true;
       clone.metadata = { shadowCaster: true };
       return clone;
     });
+    for (const [index, variant] of ['pine-full', 'pine-young', 'forest-snag'].entries())
+      result.push(
+        ...(this.extras?.trees(
+          variant as 'pine-full' | 'pine-young' | 'forest-snag',
+          groups[index + 1],
+          near,
+          name,
+        ) ?? []),
+      );
+    return result;
   }
 }

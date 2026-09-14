@@ -199,6 +199,7 @@ describe('real Havok motorcycle simulation', () => {
     vehicle.aggregate.body.setLinearVelocity(new Vector3(0, 0, 22));
     let peakLean = 0,
       slip = 0,
+      rut = 0,
       unsupported = 0;
     for (let i = 0; i < 100; i++) {
       step({ ...idle, throttle: 1, steer: 1 }, 1);
@@ -208,11 +209,14 @@ describe('real Havok motorcycle simulation', () => {
         Vector3.Dot(vehicle.visual.chassis.getDirection(Vector3.Up()), right),
       );
       slip = Math.max(slip, Math.abs(Vector3.Dot(vehicle.velocity, right)));
+      rut = Math.max(rut, vehicle.rutDepth);
       if (!vehicle.grounded) unsupported++;
     }
     expect(peakLean).toBeGreaterThan(0.6);
     expect(peakLean).toBeLessThan(0.9);
     expect(slip).toBeGreaterThan(1.5);
+    expect(rut).toBeGreaterThan(0.005);
+    expect(rut).toBeLessThanOrEqual(0.065);
     expect(unsupported).toBeLessThan(10);
     expect(vehicle.crashed).toBe(false);
     expect(vehicle.speed).toBeGreaterThan(12);
@@ -472,6 +476,51 @@ describe('real Havok motorcycle simulation', () => {
     step({ ...idle, steer: 0.7 }, 35);
     expect(Math.abs(vehicle.visual.chassis.getDirection(Vector3.Up()).x)).toBeGreaterThan(0.2);
     expect(Math.abs(vehicle.velocity.x)).toBeLessThan(0.05);
+  });
+  it('steers through uphill and downhill sides of a banked corner without losing tyre support', () => {
+    for (const bank of [-0.55, 0.55]) {
+      const ground = MeshBuilder.CreateBox(
+        'banked bike corner test',
+        { width: 400, depth: 400, height: 2 },
+        scene,
+      );
+      ground.position.set(0, 300, 12);
+      ground.rotation.z = bank;
+      const collider = new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0 }, scene);
+      try {
+        vehicle.reset(true);
+        vehicle.position.y = 300 + 1 / Math.cos(bank) + vehicle.tune.resetClearance;
+        vehicle.aggregate.body.disablePreStep = false;
+        step({ ...idle, throttle: 0.15 }, 150);
+        const normal = new Vector3(-Math.sin(bank), Math.cos(bank), 0);
+        let headingChange = 0,
+          previousYaw = vehicle.yaw,
+          groundedFrames = 0,
+          minimumAlignment = 1;
+        for (let frame = 0; frame < 360; frame++) {
+          step({ ...idle, throttle: 0.45, steer: 0.9 }, 1);
+          headingChange += Math.atan2(
+            Math.sin(vehicle.yaw - previousYaw),
+            Math.cos(vehicle.yaw - previousYaw),
+          );
+          previousYaw = vehicle.yaw;
+          if (vehicle.grounded) groundedFrames++;
+          minimumAlignment = Math.min(
+            minimumAlignment,
+            Vector3.Dot(vehicle.visual.chassis.getDirection(Vector3.Up()), normal),
+          );
+          expect(vehicle.crashed, `bank ${bank}, frame ${frame}`).toBe(false);
+        }
+        expect(headingChange).toBeGreaterThan(2.0);
+        expect(groundedFrames).toBeGreaterThan(300);
+        expect(minimumAlignment).toBeGreaterThan(0.4);
+        expect(vehicle.speed).toBeGreaterThan(5);
+      } finally {
+        collider.dispose();
+        ground.dispose();
+        vehicle.reset(true);
+      }
+    }
   });
   it('aligns the monster truck chassis and all four tyres with a banked surface', () => {
     const ground = MeshBuilder.CreateBox(

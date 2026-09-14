@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Graphics effect review</title>
+    <style>
+      body {
+        margin: 0;
+        font: 16px system-ui;
+      }
+      canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      aside {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: #ffffffe8;
+        padding: 16px;
+      }
+      label {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <aside>
+      <strong>Stationary graphics review</strong>
+      <label
+        >Ambient occlusion <input id="ao" type="range" min="0" max="2" step="0.1" value="0"
+      /></label>
+      <label
+        >Depth of field <input id="dof" type="range" min="0" max="1" step="0.1" value="0"
+      /></label>
+    </aside>
+    <script type="module">
+      import {
+        Engine,
+        WebGPUEngine,
+        Scene,
+        ArcRotateCamera,
+        HemisphericLight,
+        Vector3,
+        MeshBuilder,
+        StandardMaterial,
+        Color3,
+      } from '@babylonjs/core';
+      import { createGroundOcclusion } from '/src/world/GroundLighting.ts';
+      import { GraphicsPipeline } from '/src/graphics/GraphicsPipeline.ts';
+      import { defaultVisualSettings } from '/src/graphics/VisualSettings.ts';
+      const canvas = document.querySelector('#view');
+      let engine;
+      if (!location.search.includes('webgl2') && (await WebGPUEngine.IsSupportedAsync)) {
+        engine = new WebGPUEngine(canvas);
+        await engine.initAsync();
+      } else engine = new Engine(canvas, true);
+      const scene = new Scene(engine);
+      const camera = new ArcRotateCamera(
+        'review',
+        -Math.PI / 2,
+        1.15,
+        12,
+        new Vector3(0, 1, 0),
+        scene,
+      );
+      camera.attachControl(canvas, true);
+      new HemisphericLight('sky', Vector3.Up(), scene).intensity = 1;
+      const material = new StandardMaterial('neutral', scene);
+      material.diffuseColor = new Color3(0.65, 0.65, 0.65);
+      material.specularColor = Color3.Black();
+      const ground = MeshBuilder.CreateGround('ground', { width: 80, height: 80 }, scene);
+      ground.material = material;
+      for (let i = 0; i < 5; i++) {
+        const sphere = MeshBuilder.CreateSphere('contact sphere', { diameter: 2 }, scene);
+        sphere.position.set((i - 2) * 2.2, 1, (i % 2) * 4);
+        sphere.material = material;
+      }
+      const finishing = new GraphicsPipeline(scene, camera);
+      const ao = createGroundOcclusion(scene, camera, 'high');
+      ao.totalStrength = 0;
+      const settings = {
+        ...defaultVisualSettings,
+        style: 'natural',
+        exposure: 1,
+        contrast: 1,
+        saturation: 0,
+        bloom: 0,
+        vignette: 0,
+        sharpness: 0,
+      };
+      finishing.apply(settings);
+      finishing.focus(12);
+      document.querySelector('#ao').oninput = (e) =>
+        (ao.totalStrength = Number(e.target.value) * 2);
+      document.querySelector('#dof').oninput = (e) => {
+        settings.depthOfField = Number(e.target.value);
+        finishing.apply(settings);
+      };
+      engine.runRenderLoop(() => scene.render());
+      window.addEventListener('resize', () => engine.resize());
+    </script>
+  </body>
+</html>

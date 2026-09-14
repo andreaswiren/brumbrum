@@ -46,13 +46,31 @@ describe('rider crash recovery', () => {
         worldBefore = recovery.position.z + before.z;
       recovery.update(1 / 60, target);
       const after = recoveryFootstep(recovery.stride, 1);
-      if (before.planted && after.planted && recovery.speed > 1.8) {
+      if (before.planted && after.planted && recovery.speed > 1.5) {
         expect(recovery.position.z + after.z).toBeCloseTo(worldBefore, 5);
         expect(after.lift).toBe(0);
         checked++;
       }
     }
     expect(checked).toBeGreaterThan(30);
+  });
+
+  it('rolls through heel strike and toe-off with continuous swing velocity', () => {
+    const sample = (phase: number) => recoveryFootstep(phase * Math.PI * 2, 1);
+    expect(sample(0).pitch).toBeLessThan(-0.1);
+    expect(sample(0.55).pitch).toBeGreaterThan(0.3);
+    expect(sample(0.78).lift).toBeGreaterThan(0.15);
+    const epsilon = 0.00001;
+    for (const boundary of [0.56, 1]) {
+      const before = sample(boundary - epsilon),
+        at = sample(boundary),
+        after = sample(boundary + epsilon);
+      expect(Math.abs((at.z - before.z) / epsilon - (after.z - at.z) / epsilon)).toBeLessThan(
+        0.005,
+      );
+      expect(Math.abs(before.pitch - after.pitch)).toBeLessThan(0.001);
+      expect(Math.abs(before.lift - after.lift)).toBeLessThan(0.001);
+    }
   });
 
   it('releases the ragdoll without a position jump and remounts only when reset', async () => {
@@ -84,8 +102,10 @@ describe('rider crash recovery', () => {
         );
       });
       const target = chassis.position.add(new Vector3(2, 0, 6));
+      const kneeAngles: number[] = [];
+      let relaxedArmFrames = 0;
       for (let i = 0; i < 500; i++) {
-        rig.updateRecovery(1 / 60, target, chassis.position);
+        const state = rig.updateRecovery(1 / 60, target, chassis.position);
         if (i < 24) continue; // Brief authored fallback fade into the coherent kneeling pose.
         for (const side of [-1, 1]) {
           const endpoint = (name: string, along: number) =>
@@ -105,9 +125,29 @@ describe('rider crash recovery', () => {
               endpoint(`forearm${side}`, anatomy.forearm / 2),
             ),
           ).toBeLessThan(0.002);
+          if (state.phase === 'running' && i > 180) {
+            const hip = endpoint(`thigh${side}`, anatomy.thigh / 2),
+              knee = endpoint(`shin${side}`, anatomy.shin / 2),
+              ankle = endpoint(`shin${side}`, -anatomy.shin / 2);
+            kneeAngles.push(
+              Math.acos(
+                Math.max(
+                  -1,
+                  Math.min(
+                    1,
+                    Vector3.Dot(hip.subtract(knee).normalize(), ankle.subtract(knee).normalize()),
+                  ),
+                ),
+              ),
+            );
+            if (endpoint(`forearm${side}`, -anatomy.forearm / 2).y < rig.position.y + 0.12)
+              relaxedArmFrames++;
+          }
         }
       }
       expect(rig.recovering).toBe(true);
+      expect(Math.max(...kneeAngles) - Math.min(...kneeAngles)).toBeGreaterThan(0.5);
+      expect(relaxedArmFrames).toBeGreaterThan(80);
       expect(rig.root.parent).toBeNull();
       expect(Math.hypot(rig.position.x - target.x, rig.position.z - target.z)).toBeLessThan(0.2);
       rig.reset();

@@ -1,5 +1,9 @@
 import { ForestAssets } from './ForestAssets';
 import { TerrainMaterials } from './TerrainMaterials';
+import { RockAssets } from './RockAssets';
+import { createRockVisual } from './RockVisual';
+import { TreeDestruction, type BreakableTree } from './TreeDestruction';
+import type { VehicleKind } from '../vehicles/VehicleModels';
 import {
   Color3,
   DynamicTexture,
@@ -45,11 +49,15 @@ export class TerrainWorld {
   private rockMaterial: StandardMaterial;
   readonly markers: Mesh[] = [];
   private materials?: TerrainMaterials;
+  private destruction: TreeDestruction;
   constructor(
     private scene: Scene,
     private addCaster: (mesh: Mesh) => void = () => {},
     private assets?: ForestAssets,
+    private vegetationDensity = 1,
+    private rocks?: RockAssets,
   ) {
+    this.destruction = new TreeDestruction(scene, addCaster);
     if (typeof document !== 'undefined') this.materials = new TerrainMaterials(scene);
     this.terrainMaterial = new StandardMaterial('earth', scene);
     this.terrainMaterial.diffuseColor = Color3.White();
@@ -114,6 +122,18 @@ export class TerrainWorld {
   get collisionCount(): number {
     return [...this.sectors.values()].filter((s) => s.near).length;
   }
+  get brokenTreeCount(): number {
+    return this.destruction.brokenCount;
+  }
+  interactVehicle(position: Vector3, velocity: Vector3, kind: VehicleKind, dt: number): number {
+    return this.destruction.interact(position, velocity, kind, dt);
+  }
+  setVegetationDensity(density: number): void {
+    if (Math.abs(density - this.vegetationDensity) < 0.01) return;
+    this.vegetationDensity = density;
+    for (const key of [...this.sectors.keys()]) this.remove(key);
+    this.center = '';
+  }
   update(position: Vector3, immediate = false): void {
     const center = sectorAt(position.x, position.z),
       key = sectorKey(center);
@@ -159,6 +179,7 @@ export class TerrainWorld {
   }
   private remove(key: string): void {
     const s = this.sectors.get(key)!;
+    this.destruction.unregister(key);
     s.collision?.dispose();
     for (const p of s.props) {
       const mesh = p.transformNode;
@@ -231,7 +252,8 @@ export class TerrainWorld {
       props: PhysicsAggregate[] = [];
     const matrices: number[] = [],
       trunks: number[] = [];
-    for (let i = 0; i < (near ? 85 : 45); i++) {
+    const breakableTrees: BreakableTree[] = [];
+    for (let i = 0; i < Math.round((near ? 85 : 45) * this.vegetationDensity); i++) {
       const x = (sx + hash(i + sx * 37, sz * 19)) * size,
         z = (sz + hash(i + 98, sx * 23 + sz)) * size;
       if (
@@ -240,9 +262,26 @@ export class TerrainWorld {
         jumps.some((j) => Math.abs(j.x - x) < j.width + 9 && Math.abs(j.z - z) < j.length + 15)
       )
         continue;
-      const h = 7 + hash(i, sx + sz * 7) * 10,
+      const h = i % 7 === 0 ? 3 + hash(i, sx + sz * 7) * 3 : 7 + hash(i, sx + sz * 7) * 10,
         y = collisionHeight(x, z) - 0.3,
         scale = h / 10;
+      const id = `${sx},${sz}:${i}`;
+      let treePhysics: PhysicsAggregate | undefined;
+      breakableTrees.push({
+        id,
+        position: new Vector3(x, y, z),
+        height: h,
+        diameter: 0.65 * scale,
+        removeCollider: () => {
+          if (!treePhysics) return;
+          const index = props.indexOf(treePhysics);
+          if (index >= 0) props.splice(index, 1);
+          const colliderMesh = treePhysics.transformNode;
+          treePhysics.dispose();
+          colliderMesh.dispose();
+          treePhysics = undefined;
+        },
+      });
       Matrix.Compose(
         new Vector3(scale, scale, scale),
         Quaternion.RotationAxis(Vector3.Up(), hash(i, z) * 6),
@@ -253,7 +292,7 @@ export class TerrainWorld {
         Quaternion.Identity(),
         new Vector3(x, y, z),
       ).copyToArray(trunks, trunks.length);
-      if (near) {
+      if (near && !this.destruction.isBroken(id)) {
         const trunkCollider = MeshBuilder.CreateCylinder(
           'tree collider',
           { height: h * 0.65, diameter: 0.65 * scale, tessellation: 6 },
@@ -261,14 +300,13 @@ export class TerrainWorld {
         );
         trunkCollider.position.set(x, y + h * 0.325, z);
         trunkCollider.isVisible = false;
-        props.push(
-          new PhysicsAggregate(
-            trunkCollider,
-            PhysicsShapeType.CYLINDER,
-            { mass: 0, friction: 0.7 },
-            this.scene,
-          ),
+        treePhysics = new PhysicsAggregate(
+          trunkCollider,
+          PhysicsShapeType.CYLINDER,
+          { mass: 0, friction: 0.7 },
+          this.scene,
         );
+        props.push(treePhysics);
       }
     }
     if (this.assets) {
@@ -314,6 +352,7 @@ export class TerrainWorld {
         this.addCaster(trunk);
       }
     }
+    this.destruction.register(sectorKey({ x: sx, z: sz }), breakableTrees, trees);
     if (near) {
       const blades = new Mesh(`grass batch ${sx},${sz}`, this.scene),
         gd = new VertexData();
@@ -350,7 +389,7 @@ export class TerrainWorld {
       gd.applyToMesh(blades);
       blades.material = this.grassMaterial;
       const grassMatrices: number[] = [];
-      for (let i = 0; i < 2200; i++) {
+      for (let i = 0; i < Math.round(2200 * this.vegetationDensity); i++) {
         const x = (sx + hash(i + 500, sz * 37)) * size,
           z = (sz + hash(i + 9500, sx * 29)) * size;
         if (trailDistance(x, z) < 9 || waterAt(x, z) !== undefined || snowAmount(x, z) > 0.4)
@@ -369,21 +408,19 @@ export class TerrainWorld {
         const x = (sx + hash(i + 370, sz)) * size,
           z = (sz + hash(i + 1270, sx)) * size;
         if (trailDistance(x, z) < 20 || waterAt(x, z) !== undefined) continue;
-        const rock = MeshBuilder.CreateIcoSphere(
-          'granite outcrop',
-          { radius: 1, subdivisions: 3, flat: false },
-          this.scene,
-        );
         const large = i % 4 === 0 ? 2 : 1;
-        rock.scaling.set(
-          (2 + hash(i, sx) * 3) * large,
-          (1.5 + hash(i, sz) * 2) * large,
-          (2.5 + hash(i, sx + sz) * 2) * large,
-        );
-        rock.position.set(x, collisionHeight(x, z) - rock.scaling.y * 0.3, z);
-        rock.rotation.y = i;
-        rock.material = this.rockMaterial;
-        rock.receiveShadows = true;
+        const placement = {
+          x,
+          z,
+          seed: i + sx * 173 + sz * 941,
+          yaw: i,
+          scale: new Vector3(
+            (2 + hash(i, sx) * 3) * large,
+            (1.5 + hash(i, sz) * 2) * large,
+            (2.5 + hash(i, sx + sz) * 2) * large,
+          ),
+        };
+        const rock = this.rocks?.create(placement) ?? createRockVisual(this.scene, placement);
         props.push(
           new PhysicsAggregate(
             rock,

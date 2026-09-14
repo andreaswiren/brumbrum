@@ -81,6 +81,8 @@ export class Motorcycle {
   submerged = false;
   floorRecoveries = 0;
   preloadCharge = 0;
+  slideIntensity = 0;
+  rutDepth = 0;
   readonly audioImpacts: RideImpact[] = [];
   private floorSamples: { point: Vector3; radius: number }[] = [];
   constructor(
@@ -232,6 +234,8 @@ export class Motorcycle {
     this.jumpHeld = false;
     this.jumpCooldown = 0;
     this.preloadCharge = 0;
+    this.slideIntensity = 0;
+    this.rutDepth = 0;
     this.airborneVelocity.setAll(0);
     this.groundSteer = 0;
     this.inheritedAirSteer = false;
@@ -332,17 +336,21 @@ export class Motorcycle {
       }
       return;
     }
+    // Remove corner lean relative to the supporting bank, not the world's
+    // vertical axis. A downhill lean can be nearly horizontal in world space
+    // while the tyres remain safely aligned with a steep hillside.
+    const priorBankNormal = this.lastContactNormal;
     const rayUp =
-      this.kind === 'bike' && up.y > 0.2
-        ? Vector3.Cross(
-            forward,
-            new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)),
-          ).normalize()
+      this.kind === 'bike' && Vector3.Dot(up, priorBankNormal) > 0.2
+        ? priorBankNormal.subtract(forward.scale(Vector3.Dot(priorBankNormal, forward))).normalize()
         : up;
     const rollFactor = Math.max(0.25, Vector3.Dot(up, rayUp));
+    const tyreBankTilt = Math.min(1, Math.abs(Vector3.Dot(right, priorBankNormal)));
     const tireSupport =
       this.kind === 'bike'
-        ? this.floorSamples[1].radius / Math.max(0.25, rayUp.y)
+        ? (this.tune.wheelRadius * Math.sqrt(Math.max(0, 1 - tyreBankTilt * tyreBankTilt)) +
+            0.065 * tyreBankTilt) /
+          Math.max(0.25, Vector3.Dot(priorBankNormal, rayUp))
         : this.tune.wheelRadius;
     let contactCount = 0;
     const supportNormal = Vector3.Zero();
@@ -413,6 +421,19 @@ export class Motorcycle {
       }
     }
     this.grounded = contactCount > 0;
+    const looseContact =
+      this.grounded &&
+      !this.crashed &&
+      !this.skimming &&
+      this.surface !== 'asphalt' &&
+      this.surface !== 'ice' &&
+      this.speed > 2;
+    const sideSpeed = Math.abs(
+      Vector3.Dot(this.velocity, new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw))),
+    );
+    const slideTarget = looseContact ? Math.min(1, Math.max(0, (sideSpeed - 0.6) / 5.4)) : 0;
+    this.slideIntensity += (slideTarget - this.slideIntensity) * (1 - Math.exp(-8 * dt));
+    this.rutDepth = looseContact ? this.slideIntensity * (this.kind === 'bike' ? 0.065 : 0.045) : 0;
     if (this.grounded) {
       supportNormal.normalize();
       // Both tyre contacts contribute; a triangle seam must not snap the pitch target.
@@ -434,13 +455,17 @@ export class Motorcycle {
     // An inverted bike's suspension rays point away from the ground. Detect
     // that landing independently of wheel contacts so it cannot stay assisted.
     const groundClearance = this.position.y - collisionHeight(this.position.x, this.position.z);
+    const uprightAlignment = this.grounded ? Vector3.Dot(up, this.lastContactNormal) : up.y;
     this.tiltedTime =
-      up.y < this.tune.crashTilt && groundClearance < 1.15 ? this.tiltedTime + dt : 0;
+      uprightAlignment < this.tune.crashTilt && groundClearance < 1.15 ? this.tiltedTime + dt : 0;
     if (this.crashGrace <= 0 && this.tiltedTime > this.tune.crashTiltGrace) this.crashed = true;
-    if (this.crashGrace <= 0 && up.y < -0.3 && groundClearance < 0.5) this.crashed = true;
-    const lateralUp = Math.abs(
-      Vector3.Dot(up, new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw))),
-    );
+    if (this.crashGrace <= 0 && uprightAlignment < -0.3 && groundClearance < 0.5)
+      this.crashed = true;
+    const bankForward = forward
+      .subtract(this.lastContactNormal.scale(Vector3.Dot(forward, this.lastContactNormal)))
+      .normalize();
+    const bankRight = Vector3.Cross(this.lastContactNormal, bankForward).normalize();
+    const lateralUp = Math.abs(Vector3.Dot(up, bankRight));
     this.overleanTime =
       lateralUp > 0.88 && groundClearance < this.tune.resetClearance + 0.6
         ? this.overleanTime + dt
@@ -464,11 +489,15 @@ export class Motorcycle {
           strength: -normalImpact,
           surface: this.skimming ? 'water' : this.surface,
         });
-      if (this.crashGrace <= 0 && normalImpact < -this.tune.crashImpactSpeed && up.y < 0.55)
+      if (
+        this.crashGrace <= 0 &&
+        normalImpact < -this.tune.crashImpactSpeed &&
+        uprightAlignment < 0.55
+      )
         this.crashed = true;
       // Landing assistance redirects travel along the ground. Restore modestly
       // reduced horizontal momentum once per real jump, before traction acts.
-      if (!this.crashed && this.airtime > 0.25 && up.y > 0.35 && input.brake < 0.1) {
+      if (!this.crashed && this.airtime > 0.25 && uprightAlignment > 0.35 && input.brake < 0.1) {
         const entrySpeed = Math.hypot(this.airborneVelocity.x, this.airborneVelocity.z);
         const retained = Math.min(this.tune.maxSpeed, entrySpeed * 0.94);
         if (retained > this.speed && entrySpeed > 2) {
@@ -615,14 +644,9 @@ export class Motorcycle {
         -input.steer * Math.min(maxLean, this.speed * (this.kind === 'bike' ? 0.055 : 0.025)) -
         (this.kind === 'monster' ? 0 : input.roll * 1.2) +
         (this.kind === 'bike' ? this.visual.riderRig.resting * 0.22 : 0);
-      const targetUp =
-        this.kind === 'monster' || this.kind === 'atv'
-          ? this.lastContactNormal.scale(Math.cos(lean)).subtract(groundRight.scale(Math.sin(lean)))
-          : new Vector3(
-              -Math.cos(this.yaw) * Math.sin(lean),
-              Math.cos(lean),
-              Math.sin(this.yaw) * Math.sin(lean),
-            );
+      const targetUp = this.lastContactNormal
+        .scale(Math.cos(lean))
+        .subtract(groundRight.scale(Math.sin(lean)));
       // Roll balance is assisted; suspension torques remain responsible for terrain pitch.
       const rollError = Vector3.Dot(Vector3.Cross(up, targetUp), forward);
       const rollRate = Vector3.Dot(this.angularVelocity, forward);
@@ -645,7 +669,7 @@ export class Motorcycle {
       const omega = right
         .scale(pitchRate * 0.97)
         .add(forward.scale(Math.max(-3, Math.min(3, rollError * 8 - rollRate * 0.15))))
-        .add(Vector3.Up().scale(targetYaw));
+        .add(this.lastContactNormal.scale(targetYaw));
       body.setAngularVelocity(omega);
       if (wheelieLoading && this.contacts[0] && !preload) {
         // Permit the geometric rise around the rear wheel, but not an additional

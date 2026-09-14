@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Tyre spray review</title>
+  <style>
+    body {
+      margin: 0;
+      background: #8faaa9;
+      font: 14px system-ui;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    aside {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      padding: 16px;
+      background: #fffdf0e8;
+      border-radius: 10px;
+    }
+    select,
+    input {
+      margin: 8px;
+    }
+    p {
+      margin: 6px;
+    }
+  </style>
+  <canvas id="view"></canvas>
+  <aside>
+    <b>Tyre spray review</b>
+    <p>Drag to orbit. Vehicle stays in place; tyres emit as if driving.</p>
+    <select id="vehicle">
+      <option value="bike">Motocross</option>
+      <option value="atv">ATV</option>
+      <option value="monster">Monster truck</option>
+      <option value="snowmobile">Snowmobile</option>
+    </select>
+    <select id="surface">
+      <option>dirt</option>
+      <option>grass</option>
+      <option>mud</option>
+      <option>snow</option>
+      <option>asphalt</option>
+    </select>
+    <p>
+      <label>Speed <input id="speed" type="range" min="0" max="35" value="14" /> m/s</label>
+    </p>
+    <p>
+      <label><input id="slide" type="checkbox" />Power slide</label
+      ><label><input id="throttle" type="checkbox" checked />Throttle</label>
+    </p>
+    <p id="stats"></p>
+  </aside>
+  <script type="module">
+    import {
+      Engine,
+      Scene,
+      ArcRotateCamera,
+      HemisphericLight,
+      DirectionalLight,
+      Color3,
+      Color4,
+      MeshBuilder,
+      StandardMaterial,
+      Vector3,
+      VertexBuffer,
+      VertexData,
+    } from '@babylonjs/core';
+    import { vehicleSetup } from '/src/vehicles/VehicleSetup.ts';
+    import { SurfaceEffects } from '/src/world/SurfaceEffects.ts';
+    import { collisionHeight } from '@brumbrum/world-format';
+    const canvas = document.querySelector('#view'),
+      engine = new Engine(canvas, true),
+      scene = new Scene(engine);
+    scene.clearColor = new Color4(0.56, 0.67, 0.72, 1);
+    const camera = new ArcRotateCamera(
+      'review',
+      -Math.PI * 0.7,
+      1.15,
+      10,
+      new Vector3(0, collisionHeight(0, 12) + 1, 12),
+      scene,
+    );
+    camera.attachControl(canvas, true);
+    camera.lowerRadiusLimit = 3;
+    camera.upperRadiusLimit = 30;
+    new HemisphericLight('fill', Vector3.Up(), scene).intensity = 0.9;
+    new DirectionalLight('sun', new Vector3(-0.5, -1, 0.4), scene).intensity = 1.7;
+    const ground = MeshBuilder.CreateGround(
+      'terrain',
+      { width: 100, height: 100, subdivisions: 120, updatable: true },
+      scene,
+    );
+    const vertices = ground.getVerticesData(VertexBuffer.PositionKind);
+    for (let i = 0; i < vertices.length; i += 3)
+      vertices[i + 1] = collisionHeight(vertices[i], vertices[i + 2]);
+    ground.updateVerticesData(VertexBuffer.PositionKind, vertices);
+    const normals = [];
+    VertexData.ComputeNormals(vertices, ground.getIndices(), normals);
+    ground.updateVerticesData(VertexBuffer.NormalKind, normals);
+    const mat = new StandardMaterial('dirt terrain', scene);
+    mat.diffuseColor = new Color3(0.37, 0.33, 0.23);
+    mat.specularColor.setAll(0);
+    ground.material = mat;
+    let vehicle;
+    function selectVehicle() {
+      if (vehicle) {
+        vehicle.visual.riderRig.dispose();
+        vehicle.visual.chassis.dispose(false, true);
+      }
+      const kind = document.querySelector('#vehicle').value,
+        { visual, tuning } = vehicleSetup(scene, kind);
+      visual.chassis.position.set(0, collisionHeight(0, 12) + tuning.wheelRadius + 0.24, 12);
+      vehicle = {
+        kind,
+        visual,
+        tune: tuning,
+        position: visual.chassis.position,
+        velocity: new Vector3(0, 0, 14),
+        speed: 14,
+        yaw: 0,
+        surface: 'dirt',
+        slideIntensity: 0,
+        skimming: false,
+        submerged: false,
+        crashed: false,
+        contacts: visual.wheels.map(() => true),
+        resetId: 0,
+      };
+      visual.riderRig.loadCharacter();
+    }
+    selectVehicle();
+    document.querySelector('#vehicle').onchange = selectVehicle;
+    const effects = new SurfaceEffects(scene);
+    scene.onBeforeRenderObservable.add(() => {
+      vehicle.speed = Number(document.querySelector('#speed').value);
+      vehicle.surface = document.querySelector('#surface').value;
+      vehicle.slideIntensity = document.querySelector('#slide').checked ? 1 : 0;
+      vehicle.velocity.set(vehicle.slideIntensity * 5, 0, vehicle.speed);
+      effects.update(vehicle, document.querySelector('#throttle').checked ? 1 : 0);
+      const emitters = scene.particleSystems.filter((p) => p.name.includes('wheel'));
+      document.querySelector('#stats').textContent =
+        `${Math.round(vehicle.speed * 3.6)} km/h · ${Math.round(emitters.reduce((sum, p) => sum + p.emitRate, 0))} particles/sec · ${emitters.reduce((sum, p) => sum + p.getActiveCount(), 0)} visible particles`;
+    });
+    engine.runRenderLoop(() => scene.render());
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</html>

@@ -41,17 +41,17 @@ export function createGroundOcclusion(
   const ao = new SSAO2RenderingPipeline(
     'ground contact occlusion',
     scene,
-    { ssaoRatio: 0.5, blurRatio: 1 },
+    { ssaoRatio: quality === 'high' ? 1 : 0.5, blurRatio: 1 },
     [camera],
     true,
   );
   ao.samples = quality === 'high' ? 16 : 8;
-  ao.radius = 1.25;
+  ao.radius = 2.5;
   ao.totalStrength = 1.25;
-  ao.base = 0.05;
+  ao.base = 0;
   ao.maxZ = 110;
   ao.minZAspect = 0.3;
-  ao.epsilon = 0.02;
+  ao.epsilon = 0.005;
   ao.expensiveBlur = true;
   ao.bilateralSamples = 12;
   ao.bilateralSoften = 0.2;

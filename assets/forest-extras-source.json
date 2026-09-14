@@ -1,0 +1,21 @@
+{
+  "variants": [
+    {
+      "files": ["pine-full.glb", "pine-full-far.glb", "pine-young.glb", "pine-young-far.glb"],
+      "author": "Poly Haven",
+      "source": "https://polyhaven.com/a/pine_sapling_small",
+      "license": "CC0-1.0",
+      "localSource": ".asset-cache/pine/pine.gltf",
+      "modifications": "Retains previously unused sapling variants A and C from the existing downloaded source. Near and far LOD geometry; textures resized to 512px and recompressed. Trunk roots normalized to the terrain anchor at runtime."
+    },
+    {
+      "files": ["forest-snag.glb"],
+      "author": "Kay Lousberg",
+      "license": "CC0-1.0",
+      "localSource": "C:/Users/Andreas/OneDrive/Dev/assets/The Complete KayKit Collection v6.1/KayKit Forest Nature Pack 1.0/Assets/gltf/Color1/Tree_Bare_2_B_Color1.gltf",
+      "licenseEvidence": "The Complete KayKit Collection v6.1/License.txt",
+      "modifications": "Retains branching dead-tree geometry. Replaces palette material with existing CC0 Poly Haven knotted_pine_bark diffuse and normal photographs, using cylindrical bark UVs."
+    }
+  ],
+  "integration": "ForestExtraAssets.load(scene), then trees(variant, matrices, near, sectorName). Variant is pine-full, pine-young, or forest-snag. All templates are 10m tall and base-anchored; use the existing terrain tree transform convention. Render smaller pine-young scales as dense saplings/understory."
+}

@@ -23,3 +23,5 @@ Terrain guidance averages both wheel normals and smooths the support plane over 
 Crash recovery briefly fades the settled ragdoll into a connected kneeling pose, rises through fixed-length limb targets, then walks back at up to 2 m/s with eased acceleration and arrival. A distance-driven stance/swing cycle reduces foot skating; the pelvis follows terrain reach limits before the pickup animation.
 
 ATV and monster-truck roll balance targets the sampled support plane rather than world-up, so their chassis bank with cross-slopes while their individual suspension contacts remain active.
+
+Loose-surface slides derive a smoothed intensity from actual sideways speed. The renderer lowers the displayed bike by up to 6.5 cm (other vehicles 4.5 cm) to suggest tyre digging, then restores the exact simulation pose after rendering. Airborne, hard-surface and water contacts do not receive this offset. Surface spray adds dense rear-biased dust and ballistic soil clumps directed against lateral slip.

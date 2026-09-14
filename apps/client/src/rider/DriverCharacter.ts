@@ -26,6 +26,8 @@ export class DriverCharacter {
   private bind = new Map<string, Matrix>();
   private release = () => {};
   private disposed = false;
+  private fingerPose = new Map<TransformNode, { rest: Quaternion; axis: Vector3; curl: number }>();
+  private fingerGrip = -1;
 
   private constructor(
     private root: TransformNode,
@@ -176,6 +178,11 @@ export class DriverCharacter {
 
   update(): void {
     if (this.disposed) return;
+    this.curlFingers(
+      this.root.metadata?.recoveryMotion
+        ? 0.28 + (this.root.metadata.recoveryHandGrip ?? 0) * 0.6
+        : 1,
+    );
     const hip = this.point('pelvis'),
       head = this.parts.get('head')!;
     const pelvisDelta = this.orient('pelvis'),
@@ -220,9 +227,19 @@ export class DriverCharacter {
       const handDirection = riding
         ? this.rotate(Vector3.Forward(), rootRotation)
         : hand.subtract(this.point(forearm, fore.height / 2)).normalize();
+      const recovering = this.root.metadata?.recoveryMotion;
       const palmNormal = riding
         ? this.rotate(Vector3.Down(), rootRotation)
-        : this.parts.get(forearm)!.mesh.getDirection(Vector3.Forward()).negate();
+        : recovering
+          ? this.rotate(
+              Vector3.Lerp(
+                Vector3.Right().scale(-side),
+                Vector3.Down(),
+                this.root.metadata.recoveryHandGrip ?? 0,
+              ).normalize(),
+              rootRotation,
+            )
+          : this.parts.get(forearm)!.mesh.getDirection(Vector3.Forward()).negate();
       const handDelta = this.frame(handDirection, palmNormal).multiply(
         this.frame(
           this.restPoint(`middle_01_${suffix}`)
@@ -246,7 +263,11 @@ export class DriverCharacter {
         `foot_${suffix}`,
         foot,
         this.parts.get(shin)!.mesh.parent === this.root
-          ? Quaternion.Slerp(rootRotation, groundFoot, plant)
+          ? recovering
+            ? rootRotation.multiply(
+                Quaternion.RotationAxis(Vector3.Right(), metadata?.recoveryFootPitch ?? 0),
+              )
+            : Quaternion.Slerp(rootRotation, groundFoot, plant)
           : shinDelta,
       );
     }
@@ -286,16 +307,23 @@ export class DriverCharacter {
     return delta;
   }
 
-  private curlFingers(): void {
-    for (const [name, node] of this.nodes) {
-      const match = /^(index|middle|ring|pinky|thumb)_0([123])_[lr]$/.exec(name);
-      if (!match || !node.rotationQuaternion) continue;
-      const rest = this.bind.get(name)!;
-      const worldAxis = new Vector3(0, 0, name.endsWith('_l') ? -1 : 1);
-      const localAxis = Vector3.TransformNormal(worldAxis, Matrix.Invert(rest)).normalize();
-      const curl = match[1] === 'thumb' ? 0.35 : match[2] === '1' ? 0.4 : 0.85;
-      node.rotationQuaternion.multiplyInPlace(Quaternion.RotationAxis(localAxis, curl));
-    }
+  private curlFingers(grip = 1): void {
+    if (Math.abs(grip - this.fingerGrip) < 0.001) return;
+    if (this.fingerPose.size === 0)
+      for (const [name, node] of this.nodes) {
+        const match = /^(index|middle|ring|pinky|thumb)_0([123])_[lr]$/.exec(name);
+        if (!match || !node.rotationQuaternion) continue;
+        const rest = this.bind.get(name)!;
+        const worldAxis = new Vector3(0, 0, name.endsWith('_l') ? -1 : 1);
+        const localAxis = Vector3.TransformNormal(worldAxis, Matrix.Invert(rest)).normalize();
+        const curl = match[1] === 'thumb' ? 0.35 : match[2] === '1' ? 0.4 : 0.85;
+        this.fingerPose.set(node, { rest: node.rotationQuaternion.clone(), axis: localAxis, curl });
+      }
+    for (const [node, pose] of this.fingerPose)
+      node.rotationQuaternion = pose.rest.multiply(
+        Quaternion.RotationAxis(pose.axis, pose.curl * grip),
+      );
+    this.fingerGrip = grip;
   }
 
   dispose(): void {

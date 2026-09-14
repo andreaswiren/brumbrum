@@ -1,0 +1,46 @@
+{
+  "author": "Kay Lousberg",
+  "pack": "KayKit Forest Nature Pack 1.0",
+  "license": "CC0",
+  "licenseFile": "licenses/KayKit-CC0.txt",
+  "sourceFolder": "C:\\Users\\Andreas\\OneDrive\\Dev\\assets\\The Complete KayKit Collection v6.1\\KayKit Forest Nature Pack 1.0\\Assets\\gltf\\Color1",
+  "conversions": "Original local glTF meshes repackaged as self-contained GLB; PBR roughness adjusted for stone.",
+  "entries": [
+    {
+      "file": "kaykit-rock-1.glb",
+      "source": "Rock_1_B_Color1",
+      "triangles": 48,
+      "bytes": 28228
+    },
+    {
+      "file": "kaykit-rock-2.glb",
+      "source": "Rock_1_D_Color1",
+      "triangles": 84,
+      "bytes": 30236
+    },
+    {
+      "file": "kaykit-rock-3.glb",
+      "source": "Rock_1_G_Color1",
+      "triangles": 104,
+      "bytes": 30384
+    },
+    {
+      "file": "kaykit-rock-4.glb",
+      "source": "Rock_1_K_Color1",
+      "triangles": 529,
+      "bytes": 56452
+    },
+    {
+      "file": "kaykit-rock-5.glb",
+      "source": "Rock_2_C_Color1",
+      "triangles": 108,
+      "bytes": 28796
+    },
+    {
+      "file": "kaykit-rock-6.glb",
+      "source": "Rock_3_B_Color1",
+      "triangles": 84,
+      "bytes": 30032
+    }
+  ]
+}
