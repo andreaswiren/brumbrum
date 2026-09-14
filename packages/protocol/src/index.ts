@@ -71,3 +71,5 @@ export interface ArenaLeaderboardEvent {
 // Future Colyseus room validates inputs and derives scores; no client score packet exists.
 export type ServerEvent =
   CrashEvent | RespawnEvent | RaceEvent | TrickEvent | ArenaLeaderboardEvent;
+
+export * from './realtime';

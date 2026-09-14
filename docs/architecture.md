@@ -17,6 +17,8 @@
 
 Input is sampled each render frame; physics and scoring update at 60 Hz. Render interpolation temporarily blends the chassis pose and restores simulation state after rendering. Browser visibility pauses rendering and suspends audio; window blur clears keyboard state.
 
-World generation is deterministic and independent of Babylon. Near terrain creation remains synchronous. Graphics presets adjust resolution and shadows; tree-density config fields are reserved. The current client has no multiplayer transport or authoritative scoring server.
+World generation is deterministic and independent of Babylon. Near terrain creation remains synchronous. Graphics settings adjust resolution, shadows, finishing effects and vegetation density. Rivers, railway grading and timber approaches share the same world-height definition as physics. Bridge and ramp decks have separate continuous collision meshes.
+
+Multiplayer connects to the WebSocket room server, sends local poses at 20 Hz and interpolates remote vehicle snapshots. The room owns membership and relays bounded poses and client-reported records; it does not run authoritative vehicle physics. See multiplayer.md for setup and invitation hosting.
 
 GroundLighting owns stable cascaded sun shadows and SSAO2 geometry-buffer contact occlusion. High uses three 2048px cascades and 16 AO samples; medium uses two 1024px cascades and eight AO samples. Low disables shadows/AO. Quality changes retain all existing terrain, rider and prop casters. Terrain normal maps are sampled as linear data.

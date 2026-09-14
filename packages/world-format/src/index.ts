@@ -1,6 +1,12 @@
 import { world, type Surface } from '@brumbrum/configuration';
 import { snowAmount, snowTrailDistance } from './snow';
+import { rivers, riverTerrainHeight, riverWaterAt } from './rivers';
+import { railwayTerrainHeight } from './railway';
+import { timberTerrainHeight } from './timber';
 export * from './snow';
+export * from './rivers';
+export * from './railway';
+export * from './timber';
 export interface WorldPosition {
   x: number;
   y: number;
@@ -17,6 +23,7 @@ export interface WorldDefinition {
   spawns: WorldPosition[];
   jumps: Jump[];
   lakes: typeof lakes;
+  rivers: typeof rivers;
   boundary: typeof boundary;
 }
 export interface Jump {
@@ -47,7 +54,10 @@ export const boundary = {
   cooldown: 8,
 } as const;
 export function waterAt(x: number, z: number): number | undefined {
-  return lakes.find((l) => ((x - l.x) / l.rx) ** 2 + ((z - l.z) / l.rz) ** 2 < 1)?.level;
+  return (
+    lakes.find((l) => ((x - l.x) / l.rx) ** 2 + ((z - l.z) / l.rz) ** 2 < 1)?.level ??
+    riverWaterAt(x, z)
+  );
 }
 export function boundaryHeight(x: number, z: number): number {
   const edge = Math.max(Math.abs(x), Math.abs(z));
@@ -65,6 +75,7 @@ export const definition: WorldDefinition = {
   spawns: [{ x: 0, y: 0, z: 12 }],
   jumps,
   lakes,
+  rivers,
   boundary,
 };
 export function sectorAt(x: number, z: number): SectorAddress {
@@ -112,8 +123,10 @@ export function terrainHeight(x: number, z: number): number {
     if (along > -1 && along < 0.3)
       h += across * jump.height * (along < 0 ? (along + 1) ** 1.7 : Math.max(0, 1 - along / 0.3));
   }
+  let lakeDistance = Infinity;
   for (const lake of lakes) {
     const r = Math.hypot((x - lake.x) / lake.rx, (z - lake.z) / lake.rz);
+    lakeDistance = Math.min(lakeDistance, r);
     // The water edge intersects a continuous bank, rather than ending above a
     // basin floor. A broad outside blend joins the bank to the surrounding hills.
     if (r <= 1) h = lake.level - 8 * (1 - r * r);
@@ -124,7 +137,15 @@ export function terrainHeight(x: number, z: number): number {
       h = bank * (1 - blend) + Math.max(h, lake.level + 1) * blend;
     }
   }
-  return h + boundaryHeight(x, z);
+  const riverHeight = riverTerrainHeight(x, z, h);
+  // River outflows may lower a reservoir bank, but must never build a dam
+  // across its existing water or lift its shore above the lake surface.
+  const nearLake = lakeDistance < 1.45;
+  h = nearLake ? Math.min(h, riverHeight) : riverHeight;
+  h = timberTerrainHeight(x, z, h);
+  const railBlend = Math.max(0, Math.min(1, (lakeDistance - 1.45) / 0.25));
+  const railHeight = nearLake ? h : railwayTerrainHeight(x, z, h);
+  return h + (railHeight - h) * railBlend * railBlend * (3 - 2 * railBlend) + boundaryHeight(x, z);
 }
 /** Exact interpolation of the near terrain triangles, including negative sectors. */
 export function collisionHeight(x: number, z: number): number {

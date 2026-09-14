@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>World landmark review</title>
+  <style>
+    body {
+      margin: 0;
+      background: #a1bed1;
+      color: #fff;
+      font: 14px system-ui;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    aside {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      max-width: 570px;
+      padding: 16px;
+      background: #14252de8;
+      border: 1px solid #ffffff24;
+      border-radius: 10px;
+    }
+    button {
+      padding: 8px 11px;
+      margin: 3px;
+      border: 1px solid #607b86;
+      border-radius: 5px;
+      background: #263e48;
+      color: white;
+      cursor: pointer;
+    }
+    button[aria-pressed='true'] {
+      background: #a9ca74;
+      color: #172513;
+    }
+    p {
+      margin: 8px 0;
+    }
+    small {
+      color: #cad8d9;
+    }
+  </style>
+  <canvas id="view" aria-label="Orbitable world landmark preview"></canvas>
+  <aside>
+    <b>World landmark review</b>
+    <p id="buttons"></p>
+    <p id="location">Loading landmarks…</p>
+    <p>
+      <label><input id="wireframe" type="checkbox" />Terrain wireframe</label>
+      <label><input id="waterMotion" type="checkbox" checked />Water motion</label>
+    </p>
+    <small
+      >Drag to orbit · scroll to zoom · right-drag to pan<br />Actual landmark meshes and a 512 m
+      patch of the shared collision terrain.</small
+    >
+  </aside>
+  <script type="module">
+    import {
+      Engine,
+      Scene,
+      ArcRotateCamera,
+      HemisphericLight,
+      DirectionalLight,
+      Color3,
+      Color4,
+      DynamicTexture,
+      HavokPlugin,
+      MeshBuilder,
+      StandardMaterial,
+      Vector3,
+      VertexBuffer,
+      VertexData,
+      ShadowGenerator,
+    } from '@babylonjs/core';
+    import HavokPhysics from '@babylonjs/havok';
+    import havokWasm from '@babylonjs/havok/lib/esm/HavokPhysics.wasm?url';
+    import {
+      collisionHeight,
+      timberStructures,
+      timberSurfaceHeight,
+      railway,
+    } from '@brumbrum/world-format';
+    import { Rivers } from '/src/world/Rivers.ts';
+    import { Lakes } from '/src/world/Lakes.ts';
+    import { Railway } from '/src/world/Railway.ts';
+    import { TimberStructures } from '/src/world/TimberStructures.ts';
+    const canvas = document.querySelector('#view'),
+      engine = new Engine(canvas, true),
+      scene = new Scene(engine);
+    scene.clearColor = new Color4(0.61, 0.74, 0.84, 1);
+    const camera = new ArcRotateCamera(
+      'landmark review',
+      -Math.PI / 2,
+      1.03,
+      65,
+      new Vector3(0, 34, -918),
+      scene,
+    );
+    camera.attachControl(canvas, true);
+    camera.lowerRadiusLimit = 5;
+    camera.upperRadiusLimit = 340;
+    camera.maxZ = 1500;
+    camera.wheelPrecision = 12;
+    camera.panningSensibility = 35;
+    const fill = new HemisphericLight('sky fill', Vector3.Up(), scene);
+    fill.intensity = 0.85;
+    fill.groundColor = new Color3(0.18, 0.17, 0.12);
+    const sun = new DirectionalLight('sun', new Vector3(-0.6, -1, 0.35), scene);
+    sun.intensity = 2;
+    const shadows = new ShadowGenerator(2048, sun);
+    shadows.usePercentageCloserFiltering = true;
+    shadows.bias = 0.0001;
+    shadows.normalBias = 0.025;
+    shadows.setDarkness(0.22);
+    const havok = await HavokPhysics({ locateFile: () => havokWasm });
+    scene.enablePhysics(new Vector3(0, -9.81, 0), new HavokPlugin(true, havok));
+    scene.physicsEnabled = false;
+    new Railway(scene, (mesh) => shadows.addShadowCaster(mesh));
+    new TimberStructures(scene, (mesh) => shadows.addShadowCaster(mesh));
+    const rivers = new Rivers(scene),
+      lakes = new Lakes(scene);
+    const ground = MeshBuilder.CreateGround(
+      'shared collision terrain',
+      { width: 512, height: 512, subdivisions: 96, updatable: true },
+      scene,
+    );
+    ground.receiveShadows = true;
+    const material = new StandardMaterial('terrain review soil', scene);
+    material.diffuseColor = new Color3(0.53, 0.58, 0.34);
+    material.specularColor.setAll(0.025);
+    ground.material = material;
+    const texture = new DynamicTexture('terrain grain', 128, scene, true),
+      context = texture.getContext();
+    for (let y = 0; y < 128; y++)
+      for (let x = 0; x < 128; x++) {
+        const noise = (Math.sin(x * 12.73 + y * 73.21) * 43758.5) % 1;
+        const color = Math.round(185 + noise * 28);
+        context.fillStyle = `rgb(${color},${color},${color - 8})`;
+        context.fillRect(x, y, 1, 1);
+      }
+    texture.update(false);
+    texture.uScale = texture.vScale = 110;
+    material.diffuseTexture = texture;
+    const original = Array.from(ground.getVerticesData(VertexBuffer.PositionKind));
+    const locations = [
+      { name: 'Station', x: railway.station.x, z: railway.station.z, y: 34, radius: 65 },
+      ...timberStructures.map((structure) => {
+        const along = structure.kind === 'ramp' ? structure.length / 2 : 0;
+        return {
+          name:
+            structure.kind === 'bridge'
+              ? structure.x < 0
+                ? 'South bridge'
+                : 'North bridge'
+              : structure.x < 0
+                ? 'Creek jump'
+                : 'River jump',
+          x: structure.x,
+          z: structure.z + along,
+          y: timberSurfaceHeight(structure, along) + 1,
+          radius: structure.kind === 'bridge' ? 65 : 42,
+        };
+      }),
+    ];
+    let current = locations[0];
+    function visit(location, index) {
+      current = location;
+      const spacing = 512 / 96,
+        cx = Math.round(location.x / spacing) * spacing,
+        cz = Math.round(location.z / spacing) * spacing;
+      const points = [...original];
+      for (let i = 0; i < points.length; i += 3)
+        points[i + 1] = collisionHeight(cx + points[i], cz + points[i + 2]);
+      ground.position.set(cx, 0, cz);
+      ground.updateVerticesData(VertexBuffer.PositionKind, points, true);
+      const normals = [];
+      VertexData.ComputeNormals(points, ground.getIndices(), normals);
+      ground.updateVerticesData(VertexBuffer.NormalKind, normals);
+      camera.target.set(location.x, location.y, location.z);
+      camera.radius = location.radius;
+      camera.alpha = -Math.PI / 2 - 0.55;
+      camera.beta = 1.03;
+      sun.position.set(location.x + 90, location.y + 180, location.z - 65);
+      document.querySelector('#location').textContent =
+        `${location.name} · X ${Math.round(location.x)}, Z ${Math.round(location.z)} · surface ${location.y.toFixed(1)} m`;
+      document
+        .querySelectorAll('#buttons button')
+        .forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
+    }
+    locations.forEach((location, index) => {
+      const button = document.createElement('button');
+      button.textContent = location.name;
+      button.onclick = () => visit(location, index);
+      document.querySelector('#buttons').append(button);
+    });
+    document.querySelector('#wireframe').onchange = (event) =>
+      (material.wireframe = event.target.checked);
+    document.querySelector('#waterMotion').onchange = (event) => {
+      rivers.setAppearance(1, event.target.checked ? 1 : 0);
+      lakes.setAppearance(1, event.target.checked ? 1 : 0);
+    };
+    visit(locations[0], 0);
+    scene.onBeforeRenderObservable.add(() => {
+      const dt = Math.min(0.04, engine.getDeltaTime() / 1000);
+      const position = new Vector3(current.x, current.y, current.z);
+      rivers.update(dt, position);
+      lakes.update(dt, position);
+    });
+    engine.runRenderLoop(() => scene.render());
+    window.addEventListener('resize', () => engine.resize());
+  </script>
+</html>

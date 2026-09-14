@@ -3,6 +3,11 @@ import {
   Matrix,
   Mesh,
   MeshBuilder,
+  HavokPlugin,
+  PhysicsAggregate,
+  PhysicsShapeCapsule,
+  PhysicsShapeContainer,
+  PhysicsShapeSphere,
   Quaternion,
   Scene,
   StandardMaterial,
@@ -28,10 +33,19 @@ interface Fall {
   direction: Vector3;
   age: number;
   angle: number;
+  position?: Vector3;
+  rotation?: Quaternion;
 }
 interface Tree extends BreakableTree {
   bindings: Binding[];
   fall?: Fall;
+  log?: {
+    mesh: Mesh;
+    aggregate: PhysicsAggregate;
+    center: number;
+    length: number;
+    samples: { point: Vector3; radius: number }[];
+  };
 }
 interface Chip {
   mesh: Mesh;
@@ -60,6 +74,7 @@ export class TreeDestruction {
   private sectors = new Map<string, TreeSector>();
   private fallen = new Map<string, Fall>();
   private wood: StandardMaterial;
+  private physicsObserverAdded = false;
   constructor(
     private scene: Scene,
     private addCaster: (mesh: Mesh) => void = () => {},
@@ -107,12 +122,20 @@ export class TreeDestruction {
       if (tree.fall) {
         tree.fall.age = Math.max(tree.fall.age, 10);
         this.stump(tree, sector, false);
-        this.animateTree(tree);
+        this.createPhysicalLog(tree, sector, 0);
+        if (tree.log) this.updatePhysicalTree(tree);
+        else this.animateTree(tree);
       }
   }
 
   unregister(key: string): void {
     const sector = this.sectors.get(key);
+    sector?.trees.forEach((tree) => {
+      if (!tree.log) return;
+      tree.fall!.position = tree.log.mesh.position.clone();
+      tree.fall!.rotation = tree.log.mesh.rotationQuaternion!.clone();
+      tree.log.aggregate.dispose();
+    });
     sector?.fragments.forEach((mesh) => mesh.dispose());
     this.sectors.delete(key);
   }
@@ -170,10 +193,11 @@ export class TreeDestruction {
             this.fallen.set(tree.id, tree.fall);
             tree.removeCollider();
             this.stump(tree, sector, true);
+            this.createPhysicalLog(tree, sector, speed);
             broken++;
           }
         }
-        if (tree.fall && tree.fall.age < 1.16 + tree.height * 0.085) {
+        if (tree.fall && !tree.log && tree.fall.age < 0.35 + tree.height * 0.021) {
           tree.fall.age += step;
           this.animateTree(tree);
         }
@@ -201,7 +225,7 @@ export class TreeDestruction {
   }
   private animateTree(tree: Tree): void {
     const fall = tree.fall!,
-      t = Math.min(1, fall.age / (1.1 + tree.height * 0.085));
+      t = Math.min(1, fall.age / (0.28 + tree.height * 0.021));
     const angle =
       fall.angle * t * t * (2 - t) +
       (t < 1 ? Math.sin(fall.age * 22) * Math.exp(-fall.age * 4) * 0.025 : 0);
@@ -217,6 +241,148 @@ export class TreeDestruction {
       const matrix = Matrix.Compose(binding.scale, tilt.multiply(binding.rotation), translation);
       binding.mesh.thinInstanceSetMatrixAt(binding.index, matrix, true);
     }
+  }
+  private createPhysicalLog(tree: Tree, sector: TreeSector, impactSpeed: number): void {
+    if (!this.scene.getPhysicsEngine() || tree.log) return;
+    if (!this.physicsObserverAdded) {
+      this.physicsObserverAdded = true;
+      this.scene.onAfterPhysicsObservable.add(() => {
+        for (const sector of this.sectors.values())
+          for (const tree of sector.trees)
+            if (tree.log) {
+              if (
+                tree.fall?.position?.equalsWithEpsilon(tree.log.mesh.position, 0.00001) &&
+                tree.fall.rotation &&
+                Math.abs(Quaternion.Dot(tree.fall.rotation, tree.log.mesh.rotationQuaternion!)) >
+                  0.99999999
+              )
+                continue;
+              this.keepLogAboveGround(tree);
+              this.updatePhysicalTree(tree);
+            }
+      });
+    }
+    const cut = this.breakHeight(tree),
+      length = Math.max(1, tree.height * 0.84 - cut),
+      center = cut + length / 2;
+    const radius = Math.max(0.09, tree.diameter * 0.5),
+      endpoint = Math.max(0.05, length / 2 - radius);
+    const mesh = MeshBuilder.CreateCylinder(
+      'fallen tree collision',
+      { height: length, diameter: radius * 2, tessellation: 8 },
+      this.scene,
+    );
+    mesh.isVisible = false;
+    mesh.isPickable = false;
+    mesh.rotationQuaternion =
+      tree.fall!.rotation?.clone() ??
+      Quaternion.RotationAxis(
+        Vector3.Cross(Vector3.Up(), tree.fall!.direction).normalize(),
+        impactSpeed > 0 ? 0.08 : tree.fall!.angle,
+      );
+    const rotatedCenter = Vector3.TransformNormal(
+      new Vector3(0, center, 0),
+      Matrix.Compose(Vector3.One(), mesh.rotationQuaternion, Vector3.Zero()),
+    );
+    mesh.position.copyFrom(tree.fall!.position ?? tree.position.add(rotatedCenter));
+    const shape = new PhysicsShapeContainer(this.scene);
+    shape.addChild(
+      new PhysicsShapeCapsule(
+        new Vector3(0, -endpoint, 0),
+        new Vector3(0, endpoint, 0),
+        radius,
+        this.scene,
+      ),
+    );
+    const samples: { point: Vector3; radius: number }[] = [];
+    for (let i = 0; i <= 12; i++)
+      samples.push({ point: new Vector3(0, -endpoint + (endpoint * 2 * i) / 12, 0), radius });
+    const snag = tree.bindings.some(
+      (binding) => binding.mesh.metadata?.vegetation === 'forest-snag',
+    );
+    if (!snag)
+      for (const [fraction, size] of [
+        [0.57, 0.1],
+        [0.77, 0.07],
+      ]) {
+        const point = new Vector3(0, tree.height * fraction - center, 0),
+          branchRadius = Math.max(radius, Math.min(1.5, tree.height * size));
+        shape.addChild(new PhysicsShapeSphere(point, branchRadius, this.scene));
+        samples.push({ point, radius: branchRadius });
+      }
+    const mass = Math.min(380, 25 + tree.diameter ** 2 * tree.height * 30);
+    const aggregate = new PhysicsAggregate(
+      mesh,
+      shape,
+      { mass, friction: 0.65, restitution: 0.04 },
+      this.scene,
+    );
+    aggregate.shape.filterMembershipMask = 1;
+    aggregate.body.setLinearDamping(0.12);
+    aggregate.body.setAngularDamping(0.35);
+    aggregate.body.setMassProperties({
+      mass,
+      inertia: new Vector3(
+        (mass * length * length) / 12,
+        (mass * radius * radius) / 2,
+        (mass * length * length) / 12,
+      ),
+    });
+    if (impactSpeed > 0) {
+      aggregate.body.setLinearVelocity(tree.fall!.direction.scale(Math.min(6, impactSpeed * 0.19)));
+      const angularSpeed = Math.min(4, 28 / length);
+      aggregate.body.setAngularVelocity(
+        Vector3.Cross(Vector3.Up(), tree.fall!.direction).normalize().scale(angularSpeed),
+      );
+    }
+    tree.log = { mesh, aggregate, center, length, samples };
+    sector.fragments.push(mesh);
+    this.keepLogAboveGround(tree);
+    this.updatePhysicalTree(tree);
+  }
+  private updatePhysicalTree(tree: Tree): void {
+    const log = tree.log!,
+      rotation = log.mesh.rotationQuaternion!,
+      matrix = Matrix.Compose(Vector3.One(), rotation, Vector3.Zero());
+    const translation = log.mesh.position.subtract(
+      Vector3.TransformNormal(new Vector3(0, log.center, 0), matrix),
+    );
+    for (const binding of tree.bindings)
+      binding.mesh.thinInstanceSetMatrixAt(
+        binding.index,
+        Matrix.Compose(binding.scale, rotation.multiply(binding.rotation), translation),
+        true,
+      );
+    tree.fall!.position = log.mesh.position.clone();
+    tree.fall!.rotation = rotation.clone();
+  }
+  /** Substep capsule/branch samples correct residual thin-terrain penetration immediately. */
+  private keepLogAboveGround(tree: Tree): void {
+    const log = tree.log!,
+      mesh = log.mesh,
+      body = log.aggregate.body;
+    const matrix = mesh.computeWorldMatrix(true);
+    let correction = 0;
+    for (const sample of log.samples) {
+      const point = Vector3.TransformCoordinates(sample.point, matrix);
+      correction = Math.max(correction, this.heightAt(point.x, point.z) + sample.radius - point.y);
+    }
+    const angular = body.getAngularVelocity(),
+      maxAngular = 32 / log.length;
+    if (angular.length() > maxAngular)
+      body.setAngularVelocity(angular.normalize().scale(maxAngular));
+    if (correction <= 0.012) return;
+    mesh.position.y += correction + 0.012;
+    const velocity = body.getLinearVelocity();
+    if (velocity.y < 0) {
+      velocity.y = 0;
+      body.setLinearVelocity(velocity);
+    }
+    mesh.computeWorldMatrix(true);
+    (this.scene.getPhysicsEngine()!.getPhysicsPlugin() as HavokPlugin).setPhysicsBodyTransformation(
+      body,
+      mesh,
+    );
   }
   private stump(tree: Tree, sector: TreeSector, chips: boolean): void {
     const height = this.breakHeight(tree),

@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "server": "tsx apps/server/src/index.ts",
     "dev": "npm run dev -w @brumbrum/client",
     "build": "npm run build -w @brumbrum/client",
     "typecheck": "tsc --noEmit",
@@ -18,11 +19,16 @@
     "@gltf-transform/core": "^4.5.0",
     "@gltf-transform/functions": "^4.5.0",
     "@types/node": "^26.5.1",
+    "@types/ws": "^8.18.1",
     "meshoptimizer": "^1.2.0",
     "prettier": "^3.9.6",
     "sharp": "^0.35.4",
+    "tsx": "^4.23.13",
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
   }
 }

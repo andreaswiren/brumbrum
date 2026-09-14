@@ -29,6 +29,8 @@ import {
   trailDistance,
   waterAt,
   snowAmount,
+  railwayClearing,
+  isTimberFootprint,
 } from '@brumbrum/world-format';
 interface Sector {
   mesh: Mesh;
@@ -258,6 +260,8 @@ export class TerrainWorld {
         z = (sz + hash(i + 98, sx * 23 + sz)) * size;
       if (
         waterAt(x, z) !== undefined ||
+        railwayClearing(x, z) ||
+        isTimberFootprint(x, z, 5) ||
         trailDistance(x, z) < 14 ||
         jumps.some((j) => Math.abs(j.x - x) < j.width + 9 && Math.abs(j.z - z) < j.length + 15)
       )
@@ -392,7 +396,13 @@ export class TerrainWorld {
       for (let i = 0; i < Math.round(2200 * this.vegetationDensity); i++) {
         const x = (sx + hash(i + 500, sz * 37)) * size,
           z = (sz + hash(i + 9500, sx * 29)) * size;
-        if (trailDistance(x, z) < 9 || waterAt(x, z) !== undefined || snowAmount(x, z) > 0.4)
+        if (
+          trailDistance(x, z) < 9 ||
+          waterAt(x, z) !== undefined ||
+          snowAmount(x, z) > 0.4 ||
+          railwayClearing(x, z) ||
+          isTimberFootprint(x, z, 2)
+        )
           continue;
         const scale = 0.6 + hash(i, z) * 0.5;
         Matrix.Compose(
@@ -407,7 +417,13 @@ export class TerrainWorld {
       for (let i = 0; i < 28; i++) {
         const x = (sx + hash(i + 370, sz)) * size,
           z = (sz + hash(i + 1270, sx)) * size;
-        if (trailDistance(x, z) < 20 || waterAt(x, z) !== undefined) continue;
+        if (
+          trailDistance(x, z) < 20 ||
+          waterAt(x, z) !== undefined ||
+          railwayClearing(x, z) ||
+          isTimberFootprint(x, z, 8)
+        )
+          continue;
         const large = i % 4 === 0 ? 2 : 1;
         const placement = {
           x,

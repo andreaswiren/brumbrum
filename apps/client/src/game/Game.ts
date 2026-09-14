@@ -32,6 +32,11 @@ import { GraphicsPipeline } from '../graphics/GraphicsPipeline';
 import { loadVisualSettings, type VisualSettings } from '../graphics/VisualSettings';
 import { GraphicsMenu } from '../ui/GraphicsMenu';
 import { RockAssets } from '../world/RockAssets';
+import { Rivers } from '../world/Rivers';
+import { Railway } from '../world/Railway';
+import { TimberStructures } from '../world/TimberStructures';
+import { RemotePlayers } from '../multiplayer/RemotePlayers';
+import { Multiplayer } from '../multiplayer/Multiplayer';
 export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   let engine: AbstractEngine;
   let renderer = 'WEBGL2';
@@ -126,6 +131,9 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
       if (place === 'lake') vehicle.travelTo(-245, -12);
       else if (place === 'wall') vehicle.travelTo(2690, 0, Math.PI / 2);
       else if (place === 'snow') vehicle.travelTo(snowSpawn.x, snowSpawn.z, snowSpawn.yaw);
+      else if (place === 'station') vehicle.travelTo(30, -938);
+      else if (place === 'creek') vehicle.travelTo(-350, -392);
+      else if (place === 'timber') vehicle.travelTo(-180, -390);
       else vehicle.reset(true);
     },
     sound: () => {
@@ -171,6 +179,7 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
     if (occlusion) occlusion.totalStrength = settings.occlusion * 2;
     world?.setVegetationDensity(settings.vegetation);
     lakes.setAppearance(settings.waterBlue, settings.waterMotion);
+    rivers.setAppearance(settings.waterBlue, settings.waterMotion);
     finishing?.apply(settings);
   };
   graphicsMenu = new GraphicsMenu(preferences, applyGraphics, storage);
@@ -206,6 +215,9 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   const skybox = scene.createDefaultSkybox(sky, true, 1800, 0, false);
   if (skybox) skybox.applyFog = false;
   const lakes = new Lakes(scene);
+  const rivers = new Rivers(scene);
+  new Railway(scene, (mesh) => shadows.addShadowCaster(mesh));
+  new TimberStructures(scene, (mesh) => shadows.addShadowCaster(mesh));
   const surfaceEffects = new SurfaceEffects(scene);
   world = new TerrainWorld(
     scene,
@@ -219,6 +231,9 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   camera = new ChaseCamera(scene, vehicle);
   finishing = new GraphicsPipeline(scene, camera.camera);
   applyGraphics(preferences);
+  const multiplayer = new Multiplayer(
+    new RemotePlayers(scene, (mesh) => shadows.addShadowCaster(mesh)),
+  );
   vehicle.visual.meshes.forEach((m) => shadows.addShadowCaster(m));
   vehicle.visual.riderRig.meshes.forEach((m) => shadows.addShadowCaster(m));
   scene.onBeforePhysicsObservable.add(() => {
@@ -267,12 +282,13 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   hud.ready();
   engine.runRenderLoop(() => {
     if (document.hidden) return;
-    scene.physicsEnabled = !graphicsMenu.dialog.open;
+    const menuOpen = graphicsMenu.dialog.open || multiplayer.dialog.open;
+    scene.physicsEnabled = !menuOpen;
     const dt = Math.min(engine.getDeltaTime() / 1000, physics.step * physics.maxFrameSteps);
     frameDt = dt;
-    if (!graphicsMenu.dialog.open) remainder += dt;
+    if (!menuOpen) remainder += dt;
     input.update();
-    if (graphicsMenu.dialog.open) {
+    if (menuOpen) {
       input.actions.throttle =
         input.actions.brake =
         input.actions.steer =
@@ -299,6 +315,8 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
     world.update(vehicle.position);
     sun.position.copyFrom(vehicle.position.add(new Vector3(35, 65, -35)));
     lakes.update(dt, vehicle.position);
+    rivers.update(dt, vehicle.position);
+    multiplayer.update(dt, vehicle, score, input.actions.steer);
     audio.update(
       vehicle.speed,
       input.actions.throttle,

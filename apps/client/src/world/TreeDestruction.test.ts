@@ -53,7 +53,7 @@ function fixture() {
 }
 
 describe('vehicle tree impacts', () => {
-  it('removes the real Havok trunk collider as soon as the impact qualifies', async () => {
+  it('replaces the rigid standing trunk with a pushable falling collider immediately', async () => {
     const require = createRequire(import.meta.url);
     const bytes = await readFile(require.resolve('@babylonjs/havok/lib/esm/HavokPhysics.wasm'));
     const havok = await HavokPhysics({ wasmBinary: new Uint8Array(bytes).buffer });
@@ -93,9 +93,70 @@ describe('vehicle tree impacts', () => {
       f.destruction.interact(new Vector3(0, 1, -2), new Vector3(0, 0, 12), 'monster', 1 / 120);
       ray.reset();
       physics.raycastToRef(new Vector3(0, 1, -3), new Vector3(0, 1, 3), ray);
-      expect(ray.hasHit).toBe(false);
+      expect(ray.hasHit).toBe(true);
+      expect(ray.body?.transformNode.name).toBe('fallen tree collision');
       expect(trunk.isDisposed()).toBe(true);
       expect(f.batch.isDisposed()).toBe(false);
+    } finally {
+      f.dispose();
+    }
+  });
+  it('topples rapidly, collides with a vehicle and keeps trunk and branch hulls above terrain', async () => {
+    const require = createRequire(import.meta.url);
+    const bytes = await readFile(require.resolve('@babylonjs/havok/lib/esm/HavokPhysics.wasm'));
+    const havok = await HavokPhysics({ wasmBinary: new Uint8Array(bytes).buffer });
+    const f = fixture();
+    try {
+      f.scene.enablePhysics(new Vector3(0, -9.81, 0), new HavokPlugin(true, havok));
+      const ground = MeshBuilder.CreateBox(
+        'ground',
+        { width: 100, height: 1, depth: 100 },
+        f.scene,
+      );
+      ground.position.y = -0.5;
+      new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0 }, f.scene);
+      const vehicle = MeshBuilder.CreateBox(
+        'parked test vehicle',
+        { width: 3, height: 1.4, depth: 3 },
+        f.scene,
+      );
+      vehicle.position.set(0, 0.7, 5);
+      const vehicleBody = new PhysicsAggregate(
+        vehicle,
+        PhysicsShapeType.BOX,
+        { mass: 1800, friction: 0.8 },
+        f.scene,
+      );
+      let contacts = 0;
+      vehicleBody.body.setCollisionCallbackEnabled(true);
+      vehicleBody.body.getCollisionObservable().add((event) => {
+        if (event.collidedAgainst.transformNode.name === 'fallen tree collision') contacts++;
+      });
+      f.destruction.interact(new Vector3(0, 1, -2), new Vector3(0, 0, 12), 'monster', 1 / 120);
+      const physics = f.scene.getPhysicsEngine() as PhysicsEngine;
+      let leanAtOneSecond = 1;
+      for (let i = 0; i < 300; i++) {
+        physics._step(1 / 120);
+        f.scene.onAfterPhysicsObservable.notifyObservers(f.scene);
+        f.destruction.interact(new Vector3(30, 1, 30), Vector3.Zero(), 'bike', 1 / 120);
+        const matrix = f.batch.thinInstanceGetWorldMatrices()[0];
+        if (i === 119) leanAtOneSecond = Vector3.TransformNormal(Vector3.Up(), matrix).y;
+        for (let part = 0; part <= 8; part++) {
+          const point = Vector3.TransformCoordinates(new Vector3(0, 0.5 + part * 0.98, 0), matrix);
+          expect(point.y).toBeGreaterThanOrEqual(0.14);
+        }
+      }
+      expect(leanAtOneSecond).toBeLessThan(0.5);
+      expect(contacts).toBeGreaterThan(0);
+      expect(vehicle.position.y).toBeGreaterThan(0.5);
+      const ray = new PhysicsRaycastResult(),
+        log = f.scene.getMeshByName('fallen tree collision')!;
+      physics.raycastToRef(
+        log.position.add(new Vector3(0, 10, 0)),
+        log.position.subtract(new Vector3(0, 10, 0)),
+        ray,
+      );
+      expect(ray.hasHit).toBe(true);
     } finally {
       f.dispose();
     }

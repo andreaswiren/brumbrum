@@ -917,3 +917,28 @@ kbd {
     padding: 18px;
   }
 }
+.multiplayer-menu {
+  max-width: 620px;
+}
+.multiplayer-menu > label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.multiplayer-menu input {
+  padding: 10px;
+  min-width: 0;
+  color: #eef1df;
+  background: #18362d;
+  border: 1px solid #65786c;
+  border-radius: 5px;
+  font: inherit;
+}
+.room-actions {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+}
+.multiplayer-menu li {
+  margin: 10px 0;
+}

@@ -1,7 +1,18 @@
 import type { AbstractEngine } from '@babylonjs/core';
 import type { Motorcycle } from '../vehicles/Motorcycle';
 import type { TerrainWorld } from '../world/TerrainWorld';
-import { jumps, lakes, boundary, sectorAt, snowAmount, snowRegion } from '@brumbrum/world-format';
+import {
+  jumps,
+  lakes,
+  boundary,
+  sectorAt,
+  snowAmount,
+  snowRegion,
+  rivers,
+  riverCenterZ,
+  railwayPoint,
+  timberStructures,
+} from '@brumbrum/world-format';
 import type { InputManager } from '../input/InputManager';
 import type { TrickScore } from '../scoring/TrickScore';
 import type { VehicleKind } from '../vehicles/VehicleModels';
@@ -68,6 +79,9 @@ export class Hud {
       ['lake', 'Mirror Lake'],
       ['wall', 'Boundary wall'],
       ['snow', 'Snow tracks'],
+      ['station', 'Train station'],
+      ['creek', 'River crossing'],
+      ['timber', 'Timber jumps'],
     ]) {
       const button = document.createElement('button');
       button.textContent = label;
@@ -259,7 +273,7 @@ export class Hud {
         .map((n) => n.toFixed(2))
         .join(
           ', ',
-        )}\nSURFACE   ${bike.surface}\nCONTACT   R:${bike.contacts[0]} F:${bike.contacts[1]}\nSPRINGS   ${bike.compression.map((n) => n.toFixed(3)).join(' / ')} m\nSECTOR    ${s.x},${s.z}\nSTREAMED  ${world.loadedCount} / COLLISION ${world.collisionCount}\nBEST AIR  ${bike.bestAir.toFixed(2)} s\n${this.inputDetails}\nFLOOR FIX ${bike.floorRecoveries} / RETURNS ${bike.boundaryLaunches}\nRAGDOLL   ${bike.visual.riderRig.active ? 'ACTIVE' : 'RIDING'}\nNETWORK   Offline vertical slice\n[F4] terrain wireframe`;
+        )}\nSURFACE   ${bike.surface}\nCONTACT   R:${bike.contacts[0]} F:${bike.contacts[1]}\nSPRINGS   ${bike.compression.map((n) => n.toFixed(3)).join(' / ')} m\nSECTOR    ${s.x},${s.z}\nSTREAMED  ${world.loadedCount} / COLLISION ${world.collisionCount}\nBEST AIR  ${bike.bestAir.toFixed(2)} s\n${this.inputDetails}\nFLOOR FIX ${bike.floorRecoveries} / RETURNS ${bike.boundaryLaunches}\nRAGDOLL   ${bike.visual.riderRig.active ? 'ACTIVE' : 'RIDING'}\nNETWORK   See MULTIPLAYER arena status\n[F4] terrain wireframe`;
     }
     this.drawMap(bike);
   }
@@ -310,6 +324,29 @@ export class Hud {
         Math.PI * 2,
       );
       c.fill();
+    }
+    c.strokeStyle = '#e5cf9b';
+    for (const river of rivers) {
+      c.strokeStyle = '#4a899f';
+      c.lineWidth = river.halfWidth * 2 * scale;
+      c.beginPath();
+      for (let x = river.startX; x <= river.endX; x += 15)
+        c.lineTo(x * scale, -riverCenterZ(river, x) * scale);
+      c.stroke();
+    }
+    c.strokeStyle = '#d0b49a';
+    c.lineWidth = 2;
+    c.setLineDash([4, 3]);
+    c.beginPath();
+    for (let i = 0; i <= 180; i++) {
+      const p = railwayPoint((i / 180) * Math.PI * 2);
+      c.lineTo(p.x * scale, -p.z * scale);
+    }
+    c.stroke();
+    c.setLineDash([]);
+    for (const structure of timberStructures) {
+      c.fillStyle = '#e3b876';
+      c.fillRect(structure.x * scale - 3, -structure.z * scale - 3, 6, 6);
     }
     c.strokeStyle = '#e5cf9b';
     c.lineWidth = 4;

@@ -10,5 +10,20 @@ export default defineConfig({
     ),
   },
   build: { chunkSizeWarningLimit: 1800 },
-  server: { port: 5173, strictPort: true },
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+    strictPort: true,
+    proxy: {
+      '/multiplayer': { target: 'ws://127.0.0.1:8080', ws: true },
+      '/api/network': { target: 'http://127.0.0.1:8080' },
+    },
+  },
+  preview: {
+    host: '0.0.0.0',
+    proxy: {
+      '/multiplayer': { target: 'ws://127.0.0.1:8080', ws: true },
+      '/api/network': { target: 'http://127.0.0.1:8080' },
+    },
+  },
 });

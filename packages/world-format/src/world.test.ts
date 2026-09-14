@@ -8,6 +8,7 @@ import {
   collisionHeight,
   surfaceAt,
   definition,
+  riverWaterAt,
 } from './index';
 import { bike, surfaces, world } from '@brumbrum/configuration';
 describe('world coordinates and content', () => {
@@ -18,13 +19,14 @@ describe('world coordinates and content', () => {
         const angle = (i * Math.PI) / 16;
         const x = lake.x + Math.cos(angle) * lake.rx,
           z = lake.z + Math.sin(angle) * lake.rz;
-        expect(terrainHeight(x, z)).toBeCloseTo(lake.level, 4);
-        expect(
-          terrainHeight(
-            lake.x + Math.cos(angle) * lake.rx * 1.04,
-            lake.z + Math.sin(angle) * lake.rz * 1.04,
-          ),
-        ).toBeGreaterThan(lake.level);
+        // A river outlet deliberately opens the reservoir's former bank.
+        if (riverWaterAt(x, z) === undefined)
+          expect(terrainHeight(x, z)).toBeCloseTo(lake.level, 4);
+        else expect(terrainHeight(x, z)).toBeLessThan(lake.level);
+        const outerX = lake.x + Math.cos(angle) * lake.rx * 1.04,
+          outerZ = lake.z + Math.sin(angle) * lake.rz * 1.04;
+        if (riverWaterAt(outerX, outerZ) === undefined)
+          expect(terrainHeight(outerX, outerZ)).toBeGreaterThan(lake.level);
         expect(Number.isFinite(collisionHeight(x, z))).toBe(true);
       }
   });

@@ -46,6 +46,9 @@ Select a vehicle using the **VEHICLE** menu. Snowmobile selection takes you to F
 
 ## Playground
 
+- A railway loop and Pine Valley station, two winding rivers, rideable timber bridges and medium wooden launch ramps. Help includes shortcuts to the station, crossing and timber jumps.
+- **MULTIPLAYER** creates a six-rider WebSocket room with copyable invitations, interpolated remote vehicles and shared score/longest-jump records. Run `npm run server` alongside the dev client; a production server also serves the built game on port 8080. See [multiplayer setup](docs/multiplayer.md).
+
 - **GRAPHICS** opens persistent quality and image-style settings: Natural, Vivid, Saturated, Energetic and Filmic. Adjust exposure, saturation, bloom, vehicle-focused depth of field, ambient occlusion, MSAA/FXAA, vegetation and animated blue water independently.
 - Forest sectors mix multiple imported pine, young-pine and snag meshes, with six gray rock assets embedded into terrain. Higher vegetation settings add denser trees and ground cover.
 - Fast impacts break trees into falling trunks, stumps and chips; monster trucks break typical trees around 25–35 km/h, while lighter vehicles need substantially more speed. Broken trees stay down during the session. All vehicles throw visible dust and debris while driving on loose ground, with stronger spray during slides.
@@ -63,6 +66,6 @@ Select a vehicle using the **VEHICLE** menu. Snowmobile selection takes you to F
 
 This remains a developing arcade prototype, not finished AAA art or a full tire simulator. Vehicles have detailed procedural mesh bodies; the rider uses a human mesh with procedural riding gear. Audio blends a CC0 recorded engine loop with combustion harmonics, gear shifts and procedural landing/obstacle/crash effects. Water uses an environment reflection rather than scene reflections. Near-sector collision construction is synchronous and can still cause loading spikes during fast traversal or destination changes.
 
-Multiplayer is not running yet. Shared arena result types include scores and longest-jump records, but a future server must derive and validate them; local personal bests are not an online leaderboard. Runs have no three-minute cutoff. Persistence is browser-local and optional when storage is blocked.
+Multiplayer rooms relay client poses and client-reported records for friendly competition; authoritative physics, anti-cheat ranking and shared tree destruction are not implemented. Internet invitations need a publicly reachable game server. Runs have no three-minute cutoff. Personal persistence is browser-local and optional when storage is blocked.
 
 See [physics](docs/physics.md), [world format](docs/world-format.md), [architecture](docs/architecture.md), [validation](docs/validation.md), [assets](docs/assets.md), and [multiplayer protocol](docs/multiplayer.md).
