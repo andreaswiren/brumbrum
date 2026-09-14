@@ -4,8 +4,9 @@ import { createRequire } from 'node:module';
 import HavokPhysics from '@babylonjs/havok';
 import { HavokPlugin, MeshBuilder, NullEngine, Scene, Vector3 } from '@babylonjs/core';
 import { collisionHeight } from '@brumbrum/world-format';
-import { RiderRecovery } from './RiderRecovery';
+import { RiderRecovery, recoveryFootstep } from './RiderRecovery';
 import { RiderRig } from './RiderRig';
+import { riderAnatomy as anatomy } from './RiderAnatomy';
 
 describe('rider crash recovery', () => {
   it('stands, runs along the ground to the vehicle, then completes a progressive lift', () => {
@@ -13,13 +14,13 @@ describe('rider crash recovery', () => {
     const target = new Vector3(90, 0, 247),
       phases = new Set<string>();
     let lastLift = 0;
-    for (let i = 0; i < 500; i++) {
+    for (let i = 0; i < 700; i++) {
       const before = recovery.position.clone(),
         state = recovery.update(1 / 60, target);
       phases.add(state.phase);
       expect(
         Math.hypot(recovery.position.x - before.x, recovery.position.z - before.z),
-      ).toBeLessThanOrEqual(4.2 / 60 + 0.00001);
+      ).toBeLessThanOrEqual(2.0 / 60 + 0.00001);
       expect(recovery.position.y).toBeCloseTo(
         collisionHeight(recovery.position.x, recovery.position.z),
         5,
@@ -32,6 +33,26 @@ describe('rider crash recovery', () => {
     expect(Math.hypot(recovery.position.x - target.x, recovery.position.z - target.z)).toBeLessThan(
       0.13,
     );
+  });
+
+  it('eases into walking and keeps the supporting foot stationary in world space', () => {
+    const recovery = new RiderRecovery(new Vector3(0, 0, 12), 0);
+    const target = new Vector3(0, 0, 60);
+    while (recovery.phase === 'standing') recovery.update(1 / 60, target);
+    expect(recovery.speed).toBeLessThan(0.3);
+    let checked = 0;
+    for (let frame = 0; frame < 240; frame++) {
+      const before = recoveryFootstep(recovery.stride, 1),
+        worldBefore = recovery.position.z + before.z;
+      recovery.update(1 / 60, target);
+      const after = recoveryFootstep(recovery.stride, 1);
+      if (before.planted && after.planted && recovery.speed > 1.8) {
+        expect(recovery.position.z + after.z).toBeCloseTo(worldBefore, 5);
+        expect(after.lift).toBe(0);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(30);
   });
 
   it('releases the ragdoll without a position jump and remounts only when reset', async () => {
@@ -63,7 +84,29 @@ describe('rider crash recovery', () => {
         );
       });
       const target = chassis.position.add(new Vector3(2, 0, 6));
-      for (let i = 0; i < 400; i++) rig.updateRecovery(1 / 60, target, chassis.position);
+      for (let i = 0; i < 500; i++) {
+        rig.updateRecovery(1 / 60, target, chassis.position);
+        if (i < 24) continue; // Brief authored fallback fade into the coherent kneeling pose.
+        for (const side of [-1, 1]) {
+          const endpoint = (name: string, along: number) =>
+            Vector3.TransformCoordinates(
+              new Vector3(0, along, 0),
+              rig.parts.get(name)!.mesh.computeWorldMatrix(true),
+            );
+          expect(
+            Vector3.Distance(
+              endpoint(`thigh${side}`, -anatomy.thigh / 2),
+              endpoint(`shin${side}`, anatomy.shin / 2),
+            ),
+          ).toBeLessThan(0.002);
+          expect(
+            Vector3.Distance(
+              endpoint(`upperArm${side}`, -anatomy.upperArm / 2),
+              endpoint(`forearm${side}`, anatomy.forearm / 2),
+            ),
+          ).toBeLessThan(0.002);
+        }
+      }
       expect(rig.recovering).toBe(true);
       expect(rig.root.parent).toBeNull();
       expect(Math.hypot(rig.position.x - target.x, rig.position.z - target.z)).toBeLessThan(0.2);
@@ -72,6 +115,7 @@ describe('rider crash recovery', () => {
       expect(rig.root.position.length()).toBe(0);
       expect(rig.recovering).toBe(false);
       expect(rig.active).toBe(false);
+      expect(rig.meshes.every((mesh) => mesh.visibility === 1)).toBe(true);
       rig.dispose();
     } finally {
       scene.dispose();

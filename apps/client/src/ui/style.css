@@ -665,15 +665,79 @@ kbd {
     right: 20px;
   }
 }
-.trick-toast {
+.trick-cluster {
   position: absolute;
   top: 106px;
   left: 50%;
-  transform: translateX(-50%) rotate(-2deg);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.trick-toast {
+  transform: rotate(-2deg);
   text-align: center;
   width: min(480px, 42vw);
   filter: drop-shadow(0 5px 0 #13251fc9);
   pointer-events: none;
+}
+.airtime-badge {
+  flex: 0 0 auto;
+  min-width: 118px;
+  padding: 10px 14px;
+  border: 3px solid #193429;
+  border-radius: 14px;
+  background: #eaff76;
+  color: #193429;
+  box-shadow: 4px 5px 0 #13251fc9;
+  text-align: center;
+  transform: rotate(3deg);
+}
+.airtime-badge[hidden] {
+  display: none;
+}
+.airtime-badge > span {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.airtime-badge strong {
+  font:
+    900 42px/1.1 'Barlow Condensed',
+    Impact,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.airtime-badge small {
+  margin-left: 4px;
+  font-weight: 800;
+}
+.airtime-badge.landed {
+  background: #fff9a6;
+}
+.jump-metrics {
+  display: grid;
+  gap: 7px;
+  padding-top: 7px;
+  border-top: 1px solid #19342955;
+}
+.jump-metrics span {
+  display: grid;
+  gap: 2px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.jump-metrics em {
+  font-style: normal;
+}
+.jump-metrics b {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 .trick-toast-label {
   display: inline-block;
@@ -711,7 +775,7 @@ kbd {
   max-width: 100%;
 }
 @media (max-height: 700px) {
-  .trick-toast {
+  .trick-cluster {
     top: 85px;
   }
   .trick-toast strong {
@@ -719,10 +783,19 @@ kbd {
   }
 }
 @media (max-width: 700px) {
-  .trick-toast {
+  .trick-cluster {
     top: 95px;
-    left: 28%;
+    gap: 10px;
+  }
+  .trick-toast {
     width: 45vw;
+  }
+  .airtime-badge {
+    min-width: 88px;
+    padding: 8px;
+  }
+  .airtime-badge strong {
+    font-size: 32px;
   }
   .trick-toast strong {
     font-size: 48px;

@@ -23,6 +23,8 @@ export class TerrainMaterials {
     this.ground = texture('forrest_ground_01_diff');
     this.sandNormal = texture('forrest_sand_01_nor_gl');
     this.groundNormal = texture('forrest_ground_01_nor_gl');
+    this.sandNormal.gammaSpace = false;
+    this.groundNormal.gammaSpace = false;
     this.snow = createSnowTexture(scene);
     this.snowNormal = new DynamicTexture('smooth packed snow normal', 2, scene, false);
     const snowContext = this.snowNormal.getContext();

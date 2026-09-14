@@ -8,7 +8,6 @@ import {
   HemisphericLight,
   HavokPlugin,
   Scene,
-  ShadowGenerator,
   Vector3,
   WebGPUEngine,
   HDRCubeTexture,
@@ -28,6 +27,7 @@ import { snowSpawn } from '@brumbrum/world-format';
 import type { VehicleKind } from '../vehicles/VehicleModels';
 import { VehicleInterpolation } from '../vehicles/VehicleInterpolation';
 import { SurfaceEffects } from '../world/SurfaceEffects';
+import { createGroundShadows, createGroundOcclusion } from '../world/GroundLighting';
 export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   let engine: AbstractEngine;
   let renderer = 'WEBGL2';
@@ -58,7 +58,7 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   scene.imageProcessingConfiguration.contrast = 1.25;
   scene.imageProcessingConfiguration.toneMappingEnabled = true;
   const hemi = new HemisphericLight('sky fill', new Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.25;
+  hemi.intensity = 0.18;
   hemi.groundColor = new Color3(0.27, 0.29, 0.19);
   const sun = new DirectionalLight('afternoon sun', new Vector3(-0.55, -0.8, 0.45), scene);
   sun.intensity = 1.35;
@@ -70,10 +70,8 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   sun.orthoBottom = -65;
   sun.shadowMinZ = 1;
   sun.shadowMaxZ = 180;
-  let shadows = new ShadowGenerator(2048, sun);
-  shadows.usePercentageCloserFiltering = true;
-  shadows.bias = 0.001;
-  shadows.normalBias = 0.03;
+  let shadows = createGroundShadows(scene, sun, 'high');
+  let occlusion: ReturnType<typeof createGroundOcclusion>;
   const input = new InputManager(),
     audio = new EngineAudio();
   let vehicle: Motorcycle, world: TerrainWorld, camera: ChaseCamera;
@@ -136,20 +134,15 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
       const preset = graphics[v as GraphicsPreset];
       if (!preset) return;
       engine.setHardwareScalingLevel(preset.pixelRatio);
+      const casters =
+        shadows.getShadowMap()?.renderList?.filter((mesh) => !mesh.isDisposed()) ?? [];
       shadows.dispose();
-      shadows = new ShadowGenerator(Math.max(256, preset.shadows), sun);
-      shadows.usePercentageCloserFiltering = true;
-      if (preset.shadows) {
-        vehicle?.visual.meshes.forEach((m) => shadows.addShadowCaster(m));
-        scene.meshes
-          .filter(
-            (m) =>
-              m.name.startsWith('pine batch') ||
-              m.name === 'trunk batch' ||
-              m.name === 'granite outcrop',
-          )
-          .forEach((m) => shadows.addShadowCaster(m));
-      }
+      shadows = createGroundShadows(scene, sun, v as GraphicsPreset);
+      casters.forEach((mesh) => shadows.addShadowCaster(mesh, false));
+      occlusion?.dispose(true);
+      occlusion = camera
+        ? createGroundOcclusion(scene, camera.camera, v as GraphicsPreset)
+        : undefined;
     },
   });
   const unlockAudio = (event: Event) => {
@@ -189,6 +182,7 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   vehicle = new Motorcycle(scene);
   await vehicle.visual.riderRig.loadCharacter();
   camera = new ChaseCamera(scene, vehicle);
+  occlusion = createGroundOcclusion(scene, camera.camera, 'high');
   vehicle.visual.meshes.forEach((m) => shadows.addShadowCaster(m));
   vehicle.visual.riderRig.meshes.forEach((m) => shadows.addShadowCaster(m));
   scene.onBeforePhysicsObservable.add(() => {

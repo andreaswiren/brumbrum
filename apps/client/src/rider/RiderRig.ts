@@ -26,7 +26,7 @@ import {
   ridingHipOffset,
   type RidingStance,
 } from './RiderMotion';
-import { RiderRecovery, type RecoveryState } from './RiderRecovery';
+import { RiderRecovery, recoveryFootstep, type RecoveryState } from './RiderRecovery';
 interface Part {
   mesh: Mesh;
   mass: number;
@@ -52,6 +52,7 @@ export class RiderRig {
   private character?: DriverCharacter;
   private recovery?: RiderRecovery;
   private recoveryStart = new Map<string, { position: Vector3; rotation: Quaternion }>();
+  private recoveryVisibility = new Map<Mesh, number>();
   active = false;
   constructor(
     private scene: Scene,
@@ -171,7 +172,7 @@ export class RiderRig {
       accessory.position.scaleInPlace(0.78);
       accessory.scaling.scaleInPlace(0.78);
     }
-    this.pose(0, 0, 0, 0, 0, 1);
+    this.pose(0, 0, 0, 0, 0, 1, 0, 0, false);
   }
   get position(): Vector3 {
     const pelvis = this.parts.get('pelvis')!.mesh;
@@ -214,7 +215,10 @@ export class RiderRig {
   setVehicle(stance: RidingStance): void {
     this.motion.stance = stance;
     this.motion.reset();
-    this.pose(0, 0, 0, 0, 0, 1);
+    this.pose(0, 0, 0, 0, 0, 1, 0, 0, false);
+  }
+  get resting(): number {
+    return this.active ? 0 : this.motion.resting;
   }
   pose(
     steer: number,
@@ -228,7 +232,18 @@ export class RiderRig {
     grounded = true,
   ): void {
     if (this.active) return;
-    const { hip, neck, chest, lean } = this.motion.update(
+    this.root.computeWorldMatrix(true);
+    const footWorld = Vector3.TransformCoordinates(v(-0.3, 0, -0.035), this.root.getWorldMatrix());
+    const plantPitch = 0.8;
+    footWorld.y =
+      collisionHeight(footWorld.x, footWorld.z) +
+      anatomy.ankleToSole * Math.cos(plantPitch) +
+      anatomy.ankleToToe * Math.sin(plantPitch);
+    const plantedFootTarget = Vector3.TransformCoordinates(
+      footWorld,
+      Matrix.Invert(this.root.getWorldMatrix()),
+    );
+    const { hip, neck, chest, lean, plantedFoot, breath, headYaw } = this.motion.update(
       steer,
       speed,
       throttle,
@@ -238,11 +253,16 @@ export class RiderRig {
       preload,
       weight,
       grounded,
+      this.motion.stance === 'bike' ? plantedFootTarget : undefined,
     );
     this.place('pelvis', hip.add(v(0, -0.13, 0)), hip.add(v(0, 0.13, 0)));
     this.place('torso', hip, neck);
-    const headBase = neck.add(v(0, 0.1162, 0.0628));
+    const headBase = neck.add(v(0, 0.1162 + breath, 0.0628));
     this.place('head', headBase, headBase.add(v(lean * 0.015, anatomy.head, 0)));
+    const head = this.parts.get('head')!.mesh;
+    head.rotationQuaternion = head.rotationQuaternion!.multiply(
+      Quaternion.RotationAxis(Vector3.Up(), headYaw),
+    );
     this.joints = [
       { a: 'pelvis', b: 'torso', anchor: hip.add(v(0, 0.08, 0)), swing: 0.5 },
       { a: 'torso', b: 'head', anchor: neck, swing: 0.65 },
@@ -251,11 +271,21 @@ export class RiderRig {
       const shoulder = chest.add(v(side * anatomy.shoulderHalfWidth, 0, 0));
       const { hand } = ridingContacts(this.motion.stance, side);
       const elbow = bendLimb(shoulder, hand, anatomy.upperArm, anatomy.forearm, v(side, 0.3, -0.1));
-      const { hipJoint, knee, foot } = ridingLeg(this.motion.stance, hip, side);
+      const { hipJoint, knee, foot } = ridingLeg(
+        this.motion.stance,
+        hip,
+        side,
+        side === -1 ? plantedFoot : undefined,
+      );
       this.place(`upperArm${side}`, elbow, shoulder);
       this.place(`forearm${side}`, hand, elbow);
       this.place(`thigh${side}`, knee, hipJoint);
       this.place(`shin${side}`, foot, knee);
+      this.parts.get(`shin${side}`)!.mesh.metadata = {
+        ...this.parts.get(`shin${side}`)!.mesh.metadata,
+        footPlantBlend: side === -1 ? this.resting : 0,
+        footPlantPitch: side === -1 ? plantPitch : 0,
+      };
       this.joints.push(
         { a: 'torso', b: `upperArm${side}`, anchor: shoulder, swing: 1.3 },
         { a: `upperArm${side}`, b: `forearm${side}`, anchor: elbow, swing: 1.2 },
@@ -342,6 +372,8 @@ export class RiderRig {
     this.constraints.length = 0;
     this.recovery = undefined;
     this.recoveryStart.clear();
+    this.restoreRecoveryVisibility();
+    this.root.metadata = { ...this.root.metadata, recoveryMotion: false };
     this.root.parent = this.chassis;
     this.root.position.setAll(0);
     this.root.rotation.setAll(0);
@@ -356,7 +388,7 @@ export class RiderRig {
     }
     this.active = false;
     this.motion.reset();
-    this.pose(0, 0, 0, 0, 0, 1);
+    this.pose(0, 0, 0, 0, 0, 1, 0, 0, false);
   }
   get recovering(): boolean {
     return this.recovery !== undefined;
@@ -374,6 +406,8 @@ export class RiderRig {
     this.constraints.length = 0;
     const forward = this.chassis.getDirection(Vector3.Forward());
     this.recovery = new RiderRecovery(position, Math.atan2(forward.x, forward.z));
+    this.root.metadata = { ...this.root.metadata, recoveryMotion: true };
+    for (const mesh of this.meshes) this.recoveryVisibility.set(mesh, mesh.visibility);
     this.root.parent = null;
     this.root.position.copyFrom(this.recovery.position);
     this.root.rotationQuaternion = Quaternion.RotationYawPitchRoll(this.recovery.yaw, 0, 0);
@@ -383,6 +417,7 @@ export class RiderRig {
       part.aggregate?.dispose();
       part.aggregate = undefined;
       part.mesh.setParent(this.root);
+      part.mesh.metadata = { ...part.mesh.metadata, footPlantBlend: 0, footPlantPitch: 0 };
       this.recoveryStart.set(name, {
         position: part.mesh.position.clone(),
         rotation: part.mesh.rotationQuaternion!.clone(),
@@ -405,43 +440,84 @@ export class RiderRig {
     this.root.position.copyFrom(recovery.position);
     this.root.rotationQuaternion = Quaternion.RotationYawPitchRoll(recovery.yaw, 0, 0);
     this.root.computeWorldMatrix(true);
-    const running = state.phase === 'running';
+    // Arbitrary ragdoll poses cannot be safely blended bone-by-bone into a
+    // standing pose. Briefly fade the fallen pose, then rise from coherent IK
+    // kneeling; this keeps elbows, knees and the spine connected throughout.
+    if (state.phase === 'standing' && recovery.elapsed < 0.18) {
+      this.setRecoveryVisibility(1 - recovery.elapsed / 0.18);
+      this.character?.update();
+      return state;
+    }
+    this.setRecoveryVisibility(
+      state.phase === 'standing' ? Math.min(1, (recovery.elapsed - 0.18) / 0.18) : 1,
+    );
+    const standing = state.phase === 'standing',
+      rise = standing ? recovery.standBlend : 1;
+    const gait = Math.min(1, recovery.speed / 1.2);
     const crouch =
       state.phase === 'lifting'
         ? Math.sin(Math.PI * Math.min(1, recovery.elapsed / 1.6)) * 0.27
         : 0;
-    const bob = running ? Math.abs(Math.sin(recovery.stride)) * 0.035 : 0;
-    const hip = v(0, 0.81 + bob - crouch * 0.55, -crouch * 0.2);
-    const neck = hip.add(v(0, anatomy.torso - crouch * 0.4, (running ? 0.13 : 0.04) + crouch));
+    const feet = [-1, 1].map((side) => {
+      const step = recoveryFootstep(recovery.stride, side);
+      const foot = v(
+        side * 0.13,
+        anatomy.ankleToSole + step.lift * gait,
+        standing ? side * 0.18 * (1 - rise) : step.z * gait,
+      );
+      const world = Vector3.TransformCoordinates(foot, this.root.getWorldMatrix());
+      foot.y += collisionHeight(world.x, world.z) - recovery.position.y;
+      return foot;
+    });
+    const hip = v(
+      Math.sin(recovery.stride) * gait * 0.012,
+      0.43 + 0.4 * rise + Math.cos(recovery.stride * 2) * gait * 0.012 - crouch * 0.55,
+      -crouch * 0.2,
+    );
+    // Preserve planted foot positions by adjusting the pelvis on slopes instead
+    // of shortening the leg target or sliding the boot through the ground.
+    for (let pass = 0; pass < 4; pass++)
+      for (let index = 0; index < 2; index++) {
+        const side = index === 0 ? -1 : 1,
+          centre = feet[index].subtract(ridingHipOffset(this.motion.stance, side));
+        const reach = hip.subtract(centre),
+          length = anatomy.thigh + anatomy.shin - 0.004;
+        if (reach.length() > length) hip.copyFrom(centre.add(reach.normalize().scale(length)));
+      }
+    const torsoTilt = (1 - rise) * 0.62 + 0.06 + gait * 0.1 + crouch * 1.3;
+    const neck = hip.add(
+      v(0, Math.cos(torsoTilt) * anatomy.torso, Math.sin(torsoTilt) * anatomy.torso),
+    );
     this.place('pelvis', hip.add(v(0, -0.13, 0)), hip.add(v(0, 0.13, 0)));
     this.place('torso', hip, neck);
     const headBase = neck.add(v(0, 0.1162, 0.0628));
     this.place('head', headBase, headBase.add(v(0, anatomy.head, 0)));
-    for (const side of [-1, 1]) {
-      const phase = recovery.stride + (side < 0 ? Math.PI : 0),
-        swing = running ? Math.sin(phase) : 0;
-      const foot = v(
-        side * 0.16,
-        anatomy.ankleToSole + (running ? Math.max(0, Math.cos(phase)) * 0.13 : 0),
-        swing * 0.32,
-      );
-      const footWorld = Vector3.TransformCoordinates(foot, this.root.getWorldMatrix());
-      foot.y += collisionHeight(footWorld.x, footWorld.z) - recovery.position.y;
+    for (let index = 0; index < 2; index++) {
+      const side = index === 0 ? -1 : 1,
+        foot = feet[index];
       const hipJoint = hip.add(ridingHipOffset(this.motion.stance, side));
-      // Keep the reach valid on steep ground while preserving a visible stepping arc.
-      const reach = foot.subtract(hipJoint);
-      const legReach = anatomy.thigh + anatomy.shin - 0.005;
-      if (reach.length() > legReach) foot.copyFrom(hipJoint.add(reach.normalize().scale(legReach)));
-      const knee = bendLimb(hipJoint, foot, anatomy.thigh, anatomy.shin, v(side * 0.1, 0, 1));
+      const knee = bendLimb(hipJoint, foot, anatomy.thigh, anatomy.shin, v(side * 0.12, 0, 1));
       this.place(`thigh${side}`, knee, hipJoint);
       this.place(`shin${side}`, foot, knee);
       const shoulder = neck.add(v(side * anatomy.shoulderHalfWidth, -0.0066, -0.0138));
+      const swing = Math.sin(recovery.stride + (side < 0 ? Math.PI : 0)) * gait;
+      const walkingHand = v(
+        side * 0.2,
+        hip.y + 0.12 + Math.abs(swing) * 0.05,
+        -swing * 0.22 + 0.035,
+      );
       const hand =
         state.phase === 'lifting'
-          ? v(side * 0.25, 0.65 + state.lift * 0.18, 0.48)
-          : v(side * 0.25, 0.82 + Math.abs(swing) * 0.08, -swing * 0.28 + 0.06);
+          ? Vector3.Lerp(
+              walkingHand,
+              v(side * 0.25, 0.65 + state.lift * 0.18, 0.48),
+              Math.min(1, recovery.elapsed / 0.3),
+            )
+          : standing
+            ? Vector3.Lerp(v(side * 0.2, 0.44, 0.24), walkingHand, rise)
+            : walkingHand;
       const handReach = hand.subtract(shoulder),
-        armLength = anatomy.upperArm + anatomy.forearm - 0.005;
+        armLength = anatomy.upperArm + anatomy.forearm - 0.004;
       if (handReach.length() > armLength)
         hand.copyFrom(shoulder.add(handReach.normalize().scale(armLength)));
       const elbow = bendLimb(
@@ -449,24 +525,24 @@ export class RiderRig {
         hand,
         anatomy.upperArm,
         anatomy.forearm,
-        v(side * 0.4, -0.2, -1),
+        v(side * 0.25, -0.1, -1),
       );
       this.place(`upperArm${side}`, elbow, shoulder);
       this.place(`forearm${side}`, hand, elbow);
     }
-    if (state.phase === 'standing')
-      for (const [name, start] of this.recoveryStart) {
-        const mesh = this.parts.get(name)!.mesh;
-        Vector3.LerpToRef(start.position, mesh.position, recovery.standBlend, mesh.position);
-        Quaternion.SlerpToRef(
-          start.rotation,
-          mesh.rotationQuaternion!,
-          recovery.standBlend,
-          mesh.rotationQuaternion!,
-        );
-      }
     this.character?.update();
     return state;
+  }
+  private setRecoveryVisibility(opacity: number): void {
+    for (const mesh of this.meshes) {
+      if (!this.recoveryVisibility.has(mesh)) this.recoveryVisibility.set(mesh, mesh.visibility);
+      mesh.visibility = this.recoveryVisibility.get(mesh)! * Math.max(0, Math.min(1, opacity));
+    }
+  }
+  private restoreRecoveryVisibility(): void {
+    for (const [mesh, visibility] of this.recoveryVisibility)
+      if (!mesh.isDisposed()) mesh.visibility = visibility;
+    this.recoveryVisibility.clear();
   }
   enforceFloor(): void {
     for (const part of this.parts.values()) {

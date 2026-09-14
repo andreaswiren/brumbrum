@@ -21,6 +21,11 @@ export class TrickScore {
   message = 'FIND YOUR FIRST JUMP';
   tricks: string[] = [];
   currentJump = 0;
+  currentHeight = 0;
+  peakHeight = 0;
+  get jumpInProgress(): boolean {
+    return this.active && this.contactTime === 0;
+  }
   lastJump = 0;
   longestJump = 0;
   personalBest = 0;
@@ -92,6 +97,7 @@ export class TrickScore {
       this.pending = 0;
       this.air = 0;
       this.currentJump = 0;
+      this.currentHeight = 0;
       return;
     }
     this.contactTime = 0;
@@ -105,9 +111,13 @@ export class TrickScore {
       this.angles = [0, 0, 0];
       this.trickPoints = 0;
       this.verticalTravel = 0;
+      this.currentHeight = 0;
+      this.peakHeight = 0;
     }
     this.air += dt;
     this.currentJump = Math.hypot(sample.x - this.takeoff.x, sample.z - this.takeoff.z);
+    this.currentHeight = Math.max(0, sample.y - this.takeoff.y);
+    this.peakHeight = Math.max(this.peakHeight, this.currentHeight);
     this.verticalTravel = Math.max(this.verticalTravel, Math.abs(sample.y - this.takeoff.y));
     const rates = [sample.pitchRate, sample.yawRate, sample.rollRate];
     for (let axis = 0; axis < 3; axis++) {
@@ -132,6 +142,8 @@ export class TrickScore {
     this.tricks = [];
     this.riding = false;
     this.currentJump = 0;
+    this.currentHeight = 0;
+    this.peakHeight = 0;
   }
   newRun(): void {
     this.cancel('');

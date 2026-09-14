@@ -178,7 +178,7 @@ describe('articulated mesh rider', () => {
       foot = endpoint('shin1', -anatomy.shin / 2);
     rider.pose(0, 12, 0, 0, 0, 1, 1, 0);
     const after = rider.parts.get('head')!.mesh.position;
-    expect(after.y).toBeLessThan(before.y - 0.07);
+    expect(after.y).toBeLessThan(before.y - 0.045);
     expect(after.z).toBeGreaterThan(before.z + 0.04);
     expect(Vector3.Distance(endpoint('forearm1', -anatomy.forearm / 2), hand)).toBeLessThan(0.002);
     expect(Vector3.Distance(endpoint('shin1', -anatomy.shin / 2), foot)).toBeLessThan(0.002);

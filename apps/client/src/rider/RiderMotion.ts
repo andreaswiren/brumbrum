@@ -27,9 +27,14 @@ export function ridingHipOffset(stance: RidingStance, side: number): Vector3 {
 }
 
 /** Knees wrap around the tank, keeping the leg chain on its own side of the motorcycle. */
-export function ridingLeg(stance: RidingStance, hip: Vector3, side: number) {
+export function ridingLeg(
+  stance: RidingStance,
+  hip: Vector3,
+  side: number,
+  footOverride?: Vector3,
+) {
   const hipJoint = hip.add(ridingHipOffset(stance, side));
-  const foot = ridingContacts(stance, side).foot;
+  const foot = footOverride?.clone() ?? ridingContacts(stance, side).foot;
   const knee = bendLimb(
     hipJoint,
     foot,
@@ -70,10 +75,13 @@ export class RiderMotion {
   private touchdown = 0;
   private wasGrounded = true;
   private airDuration = 0;
+  private idleTime = 0;
+  resting = 0;
 
   reset(): void {
     this.lean = this.brace = this.preload = this.weight = this.touchdown = this.airDuration = 0;
     this.wasGrounded = true;
+    this.resting = this.idleTime = 0;
   }
 
   update(
@@ -86,9 +94,22 @@ export class RiderMotion {
     preload = 0,
     weight = 0,
     grounded = true,
+    plantedFootTarget?: Vector3,
   ) {
     const step = Math.max(0, dt),
       blend = 1 - Math.exp(-8 * step);
+    const idle =
+      this.stance === 'bike' &&
+      grounded &&
+      Math.abs(speed) < 0.8 &&
+      throttle < 0.03 &&
+      preload < 0.03 &&
+      Math.abs(weight) < 0.15;
+    this.resting += ((idle ? 1 : 0) - this.resting) * (1 - Math.exp(-(idle ? 3.5 : 14) * step));
+    this.idleTime += step;
+    const plantedFoot = plantedFootTarget
+      ? Vector3.Lerp(ridingContacts(this.stance, -1).foot, plantedFootTarget, this.resting)
+      : undefined;
     if (!grounded) this.airDuration += step;
     if (grounded && !this.wasGrounded) {
       this.touchdown = Math.min(0.14, this.airDuration * 0.1);
@@ -113,24 +134,25 @@ export class RiderMotion {
       (seated ? 0.2 : 1);
     const crouch = (this.brace + this.preload * 0.22) * (seated ? 0.22 : 1);
     const hip = v(
-      this.lean * (this.stance === 'bike' ? 0.035 : 0.14),
+      this.lean * (this.stance === 'bike' ? 0.035 : 0.14) * (1 - this.resting) -
+        this.resting * 0.17,
       this.stance === 'bike'
-        ? Math.max(0.6, 0.68 - crouch * 0.48)
+        ? 0.565 - this.resting * 0.025
         : (seated ? 0.61 : 0.68) - crouch * 0.48,
       (seated ? -0.39 : -0.28) + shift,
     );
     for (let pass = 0; pass < 4; pass++)
       for (const side of [-1, 1]) {
-        const centre = ridingContacts(this.stance, side).foot.subtract(
-          ridingHipOffset(this.stance, side),
-        );
+        const centre = (
+          side === -1 && plantedFoot ? plantedFoot : ridingContacts(this.stance, side).foot
+        ).subtract(ridingHipOffset(this.stance, side));
         const offset = hip.subtract(centre);
         const reach = anatomy.thigh + anatomy.shin - 0.005;
         if (offset.length() > reach) hip.copyFrom(centre.add(offset.normalize().scale(reach)));
       }
     const neck = v(
       this.lean * 0.37,
-      (seated ? 1.28 : 1.34) - crouch,
+      (seated ? 1.28 : 1.34) - crouch + Math.sin(this.idleTime * 2.1) * this.resting * 0.006,
       0.1 + shift + this.preload * (seated ? 0.05 : 0.24) - Math.min(0, this.weight) * 0.09,
     );
     // Keep the human's spine and arm lengths fixed. Rotate the torso forward
@@ -146,7 +168,29 @@ export class RiderMotion {
         if (offset.length() > reach) neck.copyFrom(centre.add(offset.normalize().scale(reach)));
       }
     }
+    // Absorb impacts by folding at the hips after finding the reachable bar pose.
+    // This preserves spine length while letting the elbows bend instead of
+    // lifting the entire seated pelvis through the saddle.
+    const relative = neck.subtract(hip),
+      fold = Math.min(0.32, this.brace * 3);
+    neck.copyFrom(
+      hip.add(
+        v(
+          relative.x,
+          relative.y * Math.cos(fold) - relative.z * Math.sin(fold),
+          relative.y * Math.sin(fold) + relative.z * Math.cos(fold),
+        ),
+      ),
+    );
     const chest = neck.add(v(0, -0.0066, -0.0138));
-    return { hip, neck, chest, lean: this.lean };
+    return {
+      hip,
+      neck,
+      chest,
+      lean: this.lean,
+      plantedFoot,
+      breath: Math.sin(this.idleTime * 2.1) * this.resting * 0.002,
+      headYaw: Math.sin(this.idleTime * 0.43) * this.resting * 0.035,
+    };
   }
 }

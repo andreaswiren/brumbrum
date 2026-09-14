@@ -31,11 +31,13 @@ import { vehicleSetup, type VehicleTuning } from './VehicleSetup';
 import type { VehicleKind } from './VehicleModels';
 import { animateSnowmobile } from './SnowmobileVisual';
 import type { RideImpact } from '../audio/EngineAudio';
+import { WheelAnimation } from './WheelAnimation';
 export class Motorcycle {
   readonly visual: BikeVisual;
   readonly aggregate: PhysicsAggregate;
   readonly tune: VehicleTuning;
   private mounts: Vector3[] = [];
+  private wheelAnimation: WheelAnimation;
   private floorObserver: Observer<Scene>;
   readonly velocity = Vector3.Zero();
   readonly angularVelocity = Vector3.Zero();
@@ -70,6 +72,8 @@ export class Motorcycle {
   private lastContactNormal = Vector3.Up();
   private previousPosition = Vector3.Zero();
   private airborneVelocity = Vector3.Zero();
+  private groundSteer = 0;
+  private inheritedAirSteer = false;
   private boundaryCooldown = 0;
   boundaryLaunches = 0;
   resetId = 0;
@@ -86,6 +90,7 @@ export class Motorcycle {
     const { visual, dimensions, tuning } = vehicleSetup(scene, kind);
     this.visual = visual;
     this.tune = tuning;
+    this.wheelAnimation = new WheelAnimation(visual, kind, tuning.wheelbase);
     this.visual.riderRig.setVehicle(kind);
     this.mounts = visual.wheels.map((w) => new Vector3(w.position.x, 0, w.position.z));
     this.contacts.push(...this.mounts.map(() => false));
@@ -210,6 +215,7 @@ export class Motorcycle {
     this.aggregate.body.setAngularVelocity(Vector3.Zero());
     this.velocity.setAll(0);
     this.visual.riderRig.reset();
+    this.wheelAnimation.reset();
     this.crashGrace = this.tune.resetGrace;
     this.tiltedTime = 0;
     this.overleanTime = 0;
@@ -227,6 +233,8 @@ export class Motorcycle {
     this.jumpCooldown = 0;
     this.preloadCharge = 0;
     this.airborneVelocity.setAll(0);
+    this.groundSteer = 0;
+    this.inheritedAirSteer = false;
     this.lastContactNormal.copyFrom(Vector3.Up());
     this.grounded = false;
     this.previousPosition.copyFrom(this.position);
@@ -337,6 +345,7 @@ export class Motorcycle {
         ? this.floorSamples[1].radius / Math.max(0.25, rayUp.y)
         : this.tune.wheelRadius;
     let contactCount = 0;
+    const supportNormal = Vector3.Zero();
     const wheelieLoading =
       this.kind !== 'monster' && input.pitch > 0.1 && input.throttle > 0.1 && this.speed > 2;
     for (let i = 0; i < this.mounts.length; i++) {
@@ -367,7 +376,7 @@ export class Motorcycle {
           )
         : 0;
       if (this.contacts[i] && !this.crashed) {
-        this.lastContactNormal.copyFrom(hit.hitNormalWorld);
+        supportNormal.addInPlace(hit.hitNormalWorld);
         contactCount++;
         const pointVelocity = this.velocity.add(
           Vector3.Cross(this.angularVelocity, origin.subtract(this.position)),
@@ -380,7 +389,9 @@ export class Motorcycle {
           wheelieLimit,
           Math.max(
             0,
-            this.compression[i] * this.tune.spring -
+            (this.compression[i] -
+              (this.kind === 'bike' ? this.visual.riderRig.resting * 0.08 : 0)) *
+              this.tune.spring -
               Vector3.Dot(pointVelocity, hit.hitNormalWorld) * this.tune.damper,
           ),
         );
@@ -389,7 +400,6 @@ export class Motorcycle {
       this.visual.wheels[i].position.y = this.crashed
         ? -this.tune.suspensionLength * 0.85
         : -this.tune.suspensionLength + this.compression[i];
-      this.visual.wheels[i].rotation.x += (this.speed * dt) / this.tune.wheelRadius;
       if (this.debug) {
         const points = [origin, end];
         this.debugLines[i] = MeshBuilder.CreateLines(
@@ -403,6 +413,24 @@ export class Motorcycle {
       }
     }
     this.grounded = contactCount > 0;
+    if (this.grounded) {
+      supportNormal.normalize();
+      // Both tyre contacts contribute; a triangle seam must not snap the pitch target.
+      Vector3.LerpToRef(
+        this.lastContactNormal,
+        supportNormal,
+        1 - Math.exp(-16 * dt),
+        this.lastContactNormal,
+      );
+      this.lastContactNormal.normalize();
+      this.groundSteer = input.steer;
+      this.inheritedAirSteer = false;
+    } else if (wasGrounded) {
+      this.inheritedAirSteer = Math.abs(this.groundSteer) > 0.15;
+    }
+    if (Math.abs(input.steer) < 0.15 || input.steer * this.groundSteer < 0)
+      this.inheritedAirSteer = false;
+    this.wheelAnimation.update(dt, input.steer, this.speed, this.tune.wheelRadius);
     // An inverted bike's suspension rays point away from the ground. Detect
     // that landing independently of wheel contacts so it cannot stay assisted.
     const groundClearance = this.position.y - collisionHeight(this.position.x, this.position.z);
@@ -585,12 +613,16 @@ export class Motorcycle {
               : 0.95;
       const lean =
         -input.steer * Math.min(maxLean, this.speed * (this.kind === 'bike' ? 0.055 : 0.025)) -
-        (this.kind === 'monster' ? 0 : input.roll * 1.2);
-      const targetUp = new Vector3(
-        -Math.cos(this.yaw) * Math.sin(lean),
-        Math.cos(lean),
-        Math.sin(this.yaw) * Math.sin(lean),
-      );
+        (this.kind === 'monster' ? 0 : input.roll * 1.2) +
+        (this.kind === 'bike' ? this.visual.riderRig.resting * 0.22 : 0);
+      const targetUp =
+        this.kind === 'monster' || this.kind === 'atv'
+          ? this.lastContactNormal.scale(Math.cos(lean)).subtract(groundRight.scale(Math.sin(lean)))
+          : new Vector3(
+              -Math.cos(this.yaw) * Math.sin(lean),
+              Math.cos(lean),
+              Math.sin(this.yaw) * Math.sin(lean),
+            );
       // Roll balance is assisted; suspension torques remain responsible for terrain pitch.
       const rollError = Vector3.Dot(Vector3.Cross(up, targetUp), forward);
       const rollRate = Vector3.Dot(this.angularVelocity, forward);
@@ -642,6 +674,11 @@ export class Motorcycle {
       }
     } else {
       const pitchRate = Vector3.Dot(this.angularVelocity, right);
+      // A cornering input held over a bump is not a request for an airborne roll.
+      // Release/reapply or reverse steering to deliberately tilt during a real jump.
+      const airBlend = Math.min(1, Math.max(0, (this.airtime - 0.12) / 0.18));
+      const airRoll = input.roll || (this.inheritedAirSteer ? 0 : input.steer);
+      const rollRate = Vector3.Dot(this.angularVelocity, forward);
       const rear = Vector3.TransformCoordinates(this.floorSamples[1].point, mesh.getWorldMatrix());
       const rearGap = rear.y - collisionHeight(rear.x, rear.z) - this.floorSamples[1].radius;
       const holdingWheelie =
@@ -673,7 +710,7 @@ export class Motorcycle {
                 : (-input.pitch * this.tune.airPitch - pitchRate * 1.2) * dt,
             ),
           )
-          .add(forward.scale(-(input.roll || input.steer) * 4.5 * dt))
+          .add(forward.scale((-airRoll * 4.5 * airBlend - rollRate * 2.2) * dt))
           .add(level.scale(assist * dt))
           .add(Vector3.Up().scale(-this.angularVelocity.y * Math.min(1, 3 * dt))),
       );

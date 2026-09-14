@@ -23,6 +23,26 @@ function frames(score: TrickScore, changes: Partial<RideSample>, count: number) 
     });
 }
 describe('freeride trick scoring', () => {
+  it('measures live height above takeoff and preserves peak height on landing', () => {
+    const score = new TrickScore();
+    frames(score, { y: 100 }, 1);
+    frames(score, { grounded: false, x: 30, y: 112, z: 40 }, 30);
+    expect(score.jumpInProgress).toBe(true);
+    expect(score.currentJump).toBe(50);
+    expect(score.currentHeight).toBe(12);
+    frames(score, { grounded: false, x: 36, y: 105, z: 48 }, 30);
+    expect(score.currentHeight).toBe(5);
+    expect(score.peakHeight).toBe(12);
+    frames(score, { x: 36, y: 100, z: 48 }, 12);
+    expect(score.jumpInProgress).toBe(false);
+    expect(score.peakHeight).toBe(12);
+    frames(score, { grounded: false, x: 40, y: 95, z: 50 }, 2);
+    expect(score.currentHeight).toBe(0);
+    expect(score.peakHeight).toBe(0);
+    score.newRun();
+    expect(score.currentJump).toBe(0);
+    expect(score.peakHeight).toBe(0);
+  });
   it('rejects stone bumps and low hops even if contacts flicker for a while', () => {
     const score = new TrickScore();
     frames(score, {}, 1);

@@ -15,3 +15,11 @@ Simulation runs at 60 Hz. Render interpolation displays intermediate chassis pos
 Crashes require severe impacts, sustained excessive lateral lean or inversion near the floor, with reset grace. Eleven capsule bodies and ten constrained joints form the detached rider. The textured character skeleton follows those proxies during both riding and ragdoll motion. After the ragdoll settles, the rider stands, runs over terrain to the stopped vehicle and lifts it upright. Reset and vehicle changes dispose constraints and imported-character resources.
 
 Water support uses plane contacts above 14 m/s while upright. Submersion cuts propulsion and damps motion. After one second the vehicle returns to the nearest dry bank. Water entry and skimming drive separate splash, ripple and wake effects. Outside the 3 km half-extent and escape margin, a cooldown-limited velocity redirects toward centre at 115 m/s and upward at 125 m/s. Scoring excludes that launch.
+
+At a stop the motorcycle blends into a supported 12.6 degree left lean and an 8 cm spring preload offset. Ground-contact ray reach stays unchanged to avoid a rest/airborne oscillation. The rider plants a toe against the sampled terrain without stretching the leg; throttle, preload or takeoff withdraws it smoothly. Steering pivot and axle-spin transforms are separate; four-wheel vehicles use inside/outside steering geometry.
+
+Terrain guidance averages both wheel normals and smooths the support plane over a roughly 60 ms time constant. Air roll fades in after 0.12 seconds of uninterrupted flight, with roll-rate damping. Steering held from a ground corner is ignored as an air-trick request until released or reversed; explicit extra-roll input remains available. This avoids treating a brief suspension hop as a barrel roll, while preserving deliberate airborne control.
+
+Crash recovery briefly fades the settled ragdoll into a connected kneeling pose, rises through fixed-length limb targets, then walks back at up to 2 m/s with eased acceleration and arrival. A distance-driven stance/swing cycle reduces foot skating; the pelvis follows terrain reach limits before the pickup animation.
+
+ATV and monster-truck roll balance targets the sampled support plane rather than world-up, so their chassis bank with cross-slopes while their individual suspension contacts remain active.

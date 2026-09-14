@@ -10,4 +10,5 @@ export const riderAnatomy = {
   shoulderHalfWidth: 0.1737,
   wristToGrip: 0.075,
   ankleToSole: 0.098,
+  ankleToToe: 0.255,
 } as const;

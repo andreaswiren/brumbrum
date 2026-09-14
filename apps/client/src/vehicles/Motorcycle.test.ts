@@ -85,6 +85,21 @@ describe('real Havok motorcycle simulation', () => {
     expect(air).toBe(true);
     expect(landed).toBe(true);
   });
+  it('rests with a supported lean and smoothly lifts the foot when driving away', () => {
+    vehicle.reset(true);
+    step(idle, 240);
+    expect(vehicle.visual.riderRig.resting).toBeGreaterThan(0.95);
+    const right = new Vector3(Math.cos(vehicle.yaw), 0, -Math.sin(vehicle.yaw));
+    expect(Vector3.Dot(vehicle.visual.chassis.getDirection(Vector3.Up()), right)).toBeLessThan(
+      -0.1,
+    );
+    expect(vehicle.contacts).toEqual([true, true]);
+    expect(vehicle.speed).toBeLessThan(0.5);
+    step({ ...idle, throttle: 1 }, 60);
+    expect(vehicle.visual.riderRig.resting).toBeLessThan(0.01);
+    expect(vehicle.speed).toBeGreaterThan(3);
+    expect(vehicle.crashed).toBe(false);
+  });
   it('resets upright and brakes to a stop', () => {
     vehicle.reset(true);
     step(idle, 120);
@@ -417,6 +432,69 @@ describe('real Havok motorcycle simulation', () => {
     expect(Math.abs(vehicle.velocity.x)).toBeLessThan(0.05);
     expect(Math.abs(vehicle.aggregate.body.getAngularVelocity().y)).toBeLessThan(0.05);
     expect(Math.abs(vehicle.visual.chassis.getDirection(Vector3.Up()).x)).toBeGreaterThan(0.2);
+  });
+  it('stays controllable through hillside corners and short terrain hops', () => {
+    for (const [x, z, yaw] of [
+      [100, 400, 0],
+      [320, 100, 1.2],
+      [450, -200, 2.4],
+    ]) {
+      vehicle.travelTo(x, z, yaw);
+      step(idle, 120);
+      let hops = 0;
+      let peakRoll = 0;
+      for (let i = 0; i < 360; i++) {
+        step({ ...idle, throttle: 0.45, steer: Math.sin(i / 100) * 0.65 }, 1);
+        if (!vehicle.grounded) hops++;
+        const forward = vehicle.visual.chassis.getDirection(Vector3.Forward());
+        peakRoll = Math.max(peakRoll, Math.abs(Vector3.Dot(vehicle.angularVelocity, forward)));
+        if (vehicle.crashed) break;
+      }
+      console.log('Hillside corner', { x, z, hops, peakRoll, crashed: vehicle.crashed });
+      expect(vehicle.crashed, `hillside ${x}, ${z}`).toBe(false);
+      expect(peakRoll).toBeLessThan(3);
+    }
+  });
+  it('does not turn inherited cornering input into an air roll, but accepts a fresh air input', () => {
+    vehicle.reset(true);
+    step(idle, 120);
+    step({ ...idle, steer: 0.7 }, 1);
+    const initialLean = Math.abs(vehicle.visual.chassis.getDirection(Vector3.Up()).x);
+    vehicle.position.y += 30;
+    vehicle.aggregate.body.disablePreStep = false;
+    vehicle.aggregate.body.setAngularVelocity(Vector3.Zero());
+    vehicle.aggregate.body.setLinearVelocity(new Vector3(0, 0, 12));
+    step({ ...idle, steer: 0.7 }, 50);
+    expect(vehicle.grounded).toBe(false);
+    const up = vehicle.visual.chassis.getDirection(Vector3.Up());
+    expect(Math.abs(up.x)).toBeLessThan(initialLean);
+    step(idle, 1);
+    step({ ...idle, steer: 0.7 }, 35);
+    expect(Math.abs(vehicle.visual.chassis.getDirection(Vector3.Up()).x)).toBeGreaterThan(0.2);
+    expect(Math.abs(vehicle.velocity.x)).toBeLessThan(0.05);
+  });
+  it('aligns the monster truck chassis and all four tyres with a banked surface', () => {
+    const ground = MeshBuilder.CreateBox(
+      'banked truck test',
+      { width: 100, depth: 100, height: 2 },
+      scene,
+    );
+    ground.position.set(0, 300, 12);
+    ground.rotation.z = 0.3;
+    const collider = new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0 }, scene);
+    vehicle.dispose();
+    vehicle = new Motorcycle(scene, 'monster');
+    vehicle.position.y = 301 + vehicle.tune.resetClearance;
+    vehicle.aggregate.body.disablePreStep = false;
+    step(idle, 240);
+    const normal = new Vector3(-Math.sin(0.3), Math.cos(0.3), 0);
+    expect(Vector3.Dot(vehicle.visual.chassis.getDirection(Vector3.Up()), normal)).toBeGreaterThan(
+      0.99,
+    );
+    expect(vehicle.contacts.filter(Boolean).length).toBe(4);
+    expect(vehicle.crashed).toBe(false);
+    collider.dispose();
+    ground.dispose();
   });
   it('drives, steers and resets all three additional vehicles with real suspension', () => {
     for (const kind of ['atv', 'monster', 'snowmobile'] as const) {

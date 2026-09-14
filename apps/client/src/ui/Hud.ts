@@ -16,6 +16,8 @@ export class Hud {
   private lastBankedTotal = 0;
   private lastVehicle = '';
   private lastRegion = '';
+  private airHold = 0;
+  private airResetId = -1;
   debug = false;
   constructor(
     renderer: string,
@@ -38,7 +40,7 @@ export class Hud {
       <aside class="map-panel"><div class="map-heading"><span>PINE VALLEY</span><span>N ↑</span></div><canvas id="minimap" width="230" height="180" aria-label="Local terrain map with rider and jump locations"></canvas><div class="map-bottom"><i></i> FREE TO ROAM <span id="distance">0.00 KM</span></div></aside>
       <div class="telemetry"><div class="gear"><span>GEAR</span><b id="gear">N</b></div><div class="speed"><b id="speed">00</b><span>KM/H</span></div><div class="rpm"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="bike-label"><span>250</span> MX <i>●</i> <span id="surface">HARD DIRT</span></div></div>
       <footer><div class="controls"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> RIDE</span><span><kbd>SPACE</kbd> PRELOAD</span><button id="reset"><kbd>R</kbd> RESET</button><button id="camera"><kbd>C</kbd> CAMERA</button></div><div class="utilities"><button id="sound">SOUND OFF</button><select id="quality" aria-label="Graphics quality"><option value="low">LOW</option><option value="medium">MEDIUM</option><option value="high" selected>HIGH</option></select><button id="debug">F3 · DEBUG</button><span class="build">${renderer} · ALPHA 0.2</span></div></footer>
-      <div id="controller-status" class="controller-status">GAMEPAD READY · PRESS A CONTROLLER BUTTON</div><section id="help-panel" hidden><button id="close-help" aria-label="Close controls">×</button><div class="eyebrow">GET OUT THERE</div><h2>Make your own line.</h2><p>Accelerate toward the yellow flags. The first jump is straight ahead.</p><dl><dt>W</dt><dd>Throttle</dd><dt>S</dt><dd>Main brake</dd><dt>A / D</dt><dd>Steer + lean / air tilt</dd><dt>Space</dt><dd>Hold to preload, release to jump</dd><dt>↑ / ↓</dt><dd>Weight shift / pitch / wheelie</dd><dt>← / →</dt><dd>Extra lean / air roll</dd><dt>Shift</dt><dd>Rear brake / slide</dd><dt>R / Home</dt><dd>Safe reset / return to start</dd><dt>C / F3</dt><dd>Cycle camera / diagnostics</dd></dl><p>Hold ↓ with throttle for a wheelie. Use Space or gamepad A to charge preload; release to jump. A/D tilt sideways in the air. B: bail out.<br>Xbox: RT throttle · LT brake · left stick steer/weight · right stick camera orbit · A hold/release preload (except truck) · D-pad left/right lean · LB rear brake · Y camera · R3 reset · Menu help. Press a gamepad button to connect. Click once for audio if the browser requires it.</p></section>
+      <div id="controller-status" class="controller-status">GAMEPAD READY · PRESS A CONTROLLER BUTTON</div><section id="help-panel" hidden><button id="close-help" aria-label="Close controls">×</button><div class="eyebrow">GET OUT THERE</div><h2>Make your own line.</h2><p>Accelerate toward the yellow flags. The first jump is straight ahead.</p><dl><dt>W</dt><dd>Throttle</dd><dt>S</dt><dd>Main brake</dd><dt>A / D</dt><dd>Steer + lean / air tilt</dd><dt>Space</dt><dd>Hold to preload, release to jump</dd><dt>↑ / ↓</dt><dd>Weight shift / pitch / wheelie</dd><dt>← / →</dt><dd>Extra lean / air roll</dd><dt>Shift</dt><dd>Rear brake / slide</dd><dt>R / Home</dt><dd>Safe reset / return to start</dd><dt>C / F3</dt><dd>Cycle camera / diagnostics</dd></dl><p>Hold ↓ with throttle for a wheelie. Use Space or gamepad A to charge preload; release to jump. Release and reapply A/D or the left stick after takeoff to tilt sideways. Held steering stays stable over bumps. B: bail out.<br>Xbox: RT throttle · LT brake · left stick steer/weight · right stick camera orbit · A hold/release preload (except truck) · D-pad left/right lean · LB rear brake · Y camera · R3 reset · Menu help. Press a gamepad button to connect. Click once for audio if the browser requires it.</p></section>
       <pre id="diagnostics" hidden></pre><div id="loading"><span class="brand-mark">b↗</span><h2>FIND YOUR FREEDOM.</h2><p>Preparing Pine Valley…</p></div>`;
     this.speed = document.querySelector('#speed')!;
     this.state = document.querySelector('#ride-state')!;
@@ -97,7 +99,16 @@ export class Hud {
     toast.hidden = true;
     toast.innerHTML =
       '<div class="trick-toast-label">LANDED IT!</div><strong id="last-trick-points"></strong><div id="last-trick-name"></div>';
-    document.querySelector('#ui')!.append(toast);
+    const trickCluster = document.createElement('div');
+    trickCluster.className = 'trick-cluster';
+    const air = document.createElement('section');
+    air.className = 'airtime-badge';
+    air.hidden = true;
+    air.setAttribute('aria-label', 'Live jump measurements');
+    air.innerHTML =
+      '<span>AIRTIME</span><div><strong id="live-airtime">0.00</strong><small>s</small></div><div class="jump-metrics"><span>DISTANCE <b id="live-jump-distance">0.0 m</b></span><span><em id="jump-height-label">HEIGHT</em> <b id="live-jump-height">0.0 m</b></span></div>';
+    trickCluster.append(toast, air);
+    document.querySelector('#ui')!.append(trickCluster);
   }
   scoring(score: TrickScore): void {
     const toast = document.querySelector('.trick-toast') as HTMLElement;
@@ -115,9 +126,9 @@ export class Hud {
       );
       toast.animate(
         [
-          { opacity: 0, transform: 'translateX(-50%) scale(0.45) rotate(-9deg)' },
-          { opacity: 1, transform: 'translateX(-50%) scale(1.15) rotate(3deg)', offset: 0.6 },
-          { opacity: 1, transform: 'translateX(-50%) scale(1) rotate(-2deg)' },
+          { opacity: 0, transform: 'scale(0.45) rotate(-9deg)' },
+          { opacity: 1, transform: 'scale(1.15) rotate(3deg)', offset: 0.6 },
+          { opacity: 1, transform: 'scale(1) rotate(-2deg)' },
         ],
         { duration: 550, easing: 'cubic-bezier(.2,.9,.25,1)' },
       );
@@ -131,6 +142,14 @@ export class Hud {
       `${Math.floor(score.elapsed / 60)}:${String(Math.floor(score.elapsed % 60)).padStart(2, '0')}`,
     );
     put('run-score', score.total.toLocaleString());
+    if (score.jumpInProgress) {
+      put('live-jump-distance', score.currentJump.toFixed(1) + ' m');
+      put('live-jump-height', score.currentHeight.toFixed(1) + ' m');
+      put('jump-height-label', 'HEIGHT');
+    } else if (this.airHold > 0) {
+      put('live-jump-height', score.peakHeight.toFixed(1) + ' m');
+      put('jump-height-label', 'PEAK HEIGHT');
+    }
     put('current-jump', (score.currentJump || score.lastJump).toFixed(1) + ' m');
     put('longest-jump', score.longestJump.toFixed(1) + ' m');
     put('personal-jump', score.personalBest.toFixed(1) + ' m');
@@ -165,6 +184,18 @@ export class Hud {
     if (status.textContent !== label) status.textContent = label;
   }
   update(dt: number, bike: Motorcycle, world: TerrainWorld, engine: AbstractEngine): void {
+    const air = document.querySelector('.airtime-badge') as HTMLElement;
+    if (this.airResetId !== bike.resetId || bike.crashed || bike.submerged) {
+      this.airResetId = bike.resetId;
+      this.airHold = 0;
+    } else if (!bike.grounded && bike.airtime > 0.05) {
+      this.airHold = 1.5;
+      const readout = document.getElementById('live-airtime')!;
+      const value = bike.airtime.toFixed(2);
+      if (readout.textContent !== value) readout.textContent = value;
+    } else this.airHold = Math.max(0, this.airHold - dt);
+    air.hidden = this.airHold === 0;
+    air.classList.toggle('landed', bike.grounded);
     this.elapsed += dt;
     this.refresh += dt;
     if (this.refresh < 0.1) return;

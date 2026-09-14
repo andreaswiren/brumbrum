@@ -217,6 +217,7 @@ export class TerrainWorld {
     mesh.material = this.materials?.create(sx, sz) ?? this.terrainMaterial;
     mesh.useVertexColors = true;
     mesh.receiveShadows = true;
+    this.addCaster(mesh);
     mesh.freezeWorldMatrix();
     const collision = near
       ? new PhysicsAggregate(

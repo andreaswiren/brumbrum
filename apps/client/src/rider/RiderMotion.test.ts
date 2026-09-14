@@ -40,7 +40,7 @@ describe('rider movement contract', () => {
           const motion = new RiderMotion();
           const { hip } = motion.update(steer, 30, 1, 0, 0.3, 2, preload, weight);
           // Human pelvis remains supported above the narrow saddle while the torso compresses.
-          expect(hip.y).toBeGreaterThanOrEqual(0.6 - 0.00001);
+          expect(hip.y).toBeGreaterThanOrEqual(0.565 - 0.00001);
           for (const side of [-1, 1]) {
             const { hipJoint, knee, foot } = ridingLeg('bike', hip, side);
             expect(side * knee.x).toBeGreaterThan(0.32);

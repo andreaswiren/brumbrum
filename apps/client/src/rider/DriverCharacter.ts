@@ -215,7 +215,8 @@ export class DriverCharacter {
       this.segment(`lowerarm_${suffix}`, `hand_${suffix}`, forearm);
       const rootRotation = Quaternion.Identity();
       this.root.computeWorldMatrix(true).decompose(undefined, rootRotation);
-      const riding = this.parts.get(forearm)!.mesh.parent === this.root;
+      const riding =
+        this.parts.get(forearm)!.mesh.parent === this.root && !this.root.metadata?.recoveryMotion;
       const handDirection = riding
         ? this.rotate(Vector3.Forward(), rootRotation)
         : hand.subtract(this.point(forearm, fore.height / 2)).normalize();
@@ -233,10 +234,20 @@ export class DriverCharacter {
       this.retarget(`hand_${suffix}`, hand, handDelta);
       this.segment(`thigh_${suffix}`, `calf_${suffix}`, thigh);
       const shinDelta = this.segment(`calf_${suffix}`, `foot_${suffix}`, shin);
+      const metadata = this.parts.get(shin)!.mesh.metadata;
+      const plant = metadata?.footPlantBlend ?? 0;
+      const forward = this.root.getDirection(Vector3.Forward());
+      const groundFoot = Quaternion.RotationYawPitchRoll(
+        Math.atan2(forward.x, forward.z),
+        metadata?.footPlantPitch ?? 0,
+        0,
+      );
       this.retarget(
         `foot_${suffix}`,
         foot,
-        this.parts.get(shin)!.mesh.parent === this.root ? rootRotation : shinDelta,
+        this.parts.get(shin)!.mesh.parent === this.root
+          ? Quaternion.Slerp(rootRotation, groundFoot, plant)
+          : shinDelta,
       );
     }
   }
