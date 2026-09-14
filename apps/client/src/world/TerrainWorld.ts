@@ -1,0 +1,336 @@
+import {
+  Color3,
+  DynamicTexture,
+  Matrix,
+  Mesh,
+  MeshBuilder,
+  PhysicsAggregate,
+  PhysicsShapeType,
+  Quaternion,
+  Scene,
+  StandardMaterial,
+  Vector3,
+  VertexData,
+} from '@babylonjs/core';
+import { world } from '@brumbrum/configuration';
+import {
+  hash,
+  jumps,
+  sectorAt,
+  sectorKey,
+  terrainHeight,
+  trailDistance,
+} from '@brumbrum/world-format';
+interface Sector {
+  mesh: Mesh;
+  trees: Mesh[];
+  collision?: PhysicsAggregate;
+  props: PhysicsAggregate[];
+  near: boolean;
+}
+export class TerrainWorld {
+  private sectors = new Map<string, Sector>();
+  private queue: { x: number; z: number; near: boolean }[] = [];
+  private center = '';
+  private terrainMaterial: StandardMaterial;
+  private foliage: StandardMaterial;
+  private bark: StandardMaterial;
+  private markerMaterial: StandardMaterial;
+  private grassMaterial: StandardMaterial;
+  private rockMaterial: StandardMaterial;
+  readonly markers: Mesh[] = [];
+  constructor(
+    private scene: Scene,
+    private addCaster: (mesh: Mesh) => void = () => {},
+  ) {
+    this.terrainMaterial = new StandardMaterial('earth', scene);
+    this.terrainMaterial.diffuseColor = Color3.White();
+    this.terrainMaterial.specularColor = Color3.Black();
+    // A shared procedural detail map keeps the prototype entirely self-contained.
+    if (typeof document !== 'undefined') {
+      const texture = new DynamicTexture('soil grain', 256, scene, true);
+      const ctx = texture.getContext();
+      for (let z = 0; z < 256; z++)
+        for (let x = 0; x < 256; x++) {
+          const v = Math.floor(185 + hash(x, z) * 60);
+          ctx.fillStyle = `rgb(${v},${v},${v})`;
+          ctx.fillRect(x, z, 1, 1);
+        }
+      texture.update();
+      texture.wrapU = 1;
+      texture.wrapV = 1;
+      texture.anisotropicFilteringLevel = 8;
+      this.terrainMaterial.diffuseTexture = texture;
+    }
+    this.grassMaterial = new StandardMaterial('meadow grass', scene);
+    this.grassMaterial.diffuseColor = new Color3(0.35, 0.42, 0.19);
+    this.grassMaterial.specularColor = Color3.Black();
+    this.grassMaterial.backFaceCulling = false;
+    this.rockMaterial = new StandardMaterial('granite', scene);
+    this.rockMaterial.diffuseColor = new Color3(0.42, 0.43, 0.36);
+    this.rockMaterial.specularColor = Color3.Black();
+    this.foliage = new StandardMaterial('pine needles', scene);
+    this.foliage.diffuseColor = new Color3(0.16, 0.29, 0.19);
+    this.foliage.specularColor = Color3.Black();
+    this.bark = new StandardMaterial('bark', scene);
+    this.bark.diffuseColor = new Color3(0.24, 0.2, 0.14);
+    this.bark.specularColor = Color3.Black();
+    this.markerMaterial = new StandardMaterial('trail signs', scene);
+    this.markerMaterial.diffuseColor = Color3.FromHexString('#e5ee6c');
+    this.markerMaterial.emissiveColor = new Color3(0.15, 0.17, 0.03);
+    for (const jump of jumps)
+      for (const side of [-1, 1]) {
+        const x = jump.x + side * (jump.width + 1),
+          y = terrainHeight(x, jump.z);
+        const post = MeshBuilder.CreateCylinder(
+          'jump marker',
+          { height: 4, diameter: 0.15 },
+          scene,
+        );
+        post.position.set(x, y + 2, jump.z);
+        post.material = this.bark;
+        const flag = MeshBuilder.CreateBox(
+          'route pennant',
+          { width: 0.85, height: 1.3, depth: 0.08 },
+          scene,
+        );
+        flag.position.set(x, y + 3.1, jump.z);
+        flag.material = this.markerMaterial;
+        this.markers.push(post, flag);
+      }
+    this.update(new Vector3(0, 0, 12), true);
+  }
+  get loadedCount(): number {
+    return this.sectors.size;
+  }
+  get collisionCount(): number {
+    return [...this.sectors.values()].filter((s) => s.near).length;
+  }
+  update(position: Vector3, immediate = false): void {
+    const center = sectorAt(position.x, position.z),
+      key = sectorKey(center);
+    if (key !== this.center) {
+      this.center = key;
+      const wanted = new Set<string>();
+      this.queue = [];
+      for (let dz = -world.radius; dz <= world.radius; dz++)
+        for (let dx = -world.radius; dx <= world.radius; dx++) {
+          const x = center.x + dx,
+            z = center.z + dz,
+            k = sectorKey({ x, z }),
+            near = Math.abs(dx) <= 1 && Math.abs(dz) <= 1;
+          wanted.add(k);
+          const previous = this.sectors.get(k);
+          if (previous && previous.near !== near) this.remove(k);
+          if (!this.sectors.has(k)) this.queue.push({ x, z, near });
+        }
+      for (const k of this.sectors.keys()) if (!wanted.has(k)) this.remove(k);
+      this.queue.sort(
+        (a, b) =>
+          (a.x - center.x) ** 2 +
+          (a.z - center.z) ** 2 -
+          ((b.x - center.x) ** 2 + (b.z - center.z) ** 2),
+      );
+    }
+    // Near collision is created synchronously before the rider can enter a missing sector.
+    while (this.queue.length && (immediate || this.queue[0].near)) {
+      const next = this.queue.shift()!;
+      this.create(next.x, next.z, next.near);
+    }
+    if (this.queue.length) {
+      const next = this.queue.shift()!;
+      this.create(next.x, next.z, next.near);
+    }
+  }
+  setWireframe(enabled: boolean): void {
+    this.terrainMaterial.wireframe = enabled;
+  }
+  private remove(key: string): void {
+    const s = this.sectors.get(key)!;
+    s.collision?.dispose();
+    for (const p of s.props) {
+      const mesh = p.transformNode;
+      p.dispose();
+      mesh.dispose();
+    }
+    s.mesh.dispose();
+    s.trees.forEach((t) => t.dispose());
+    this.sectors.delete(key);
+  }
+  private create(sx: number, sz: number, near: boolean): void {
+    const resolution = near ? world.nearResolution : world.farResolution,
+      size = world.sectorSize;
+    const positions: number[] = [],
+      indices: number[] = [],
+      colors: number[] = [],
+      normals: number[] = [],
+      uvs: number[] = [];
+    for (let z = 0; z <= resolution; z++)
+      for (let x = 0; x <= resolution; x++) {
+        const lx = (x * size) / resolution,
+          lz = (z * size) / resolution,
+          wx = sx * size + lx,
+          wz = sz * size + lz;
+        positions.push(lx, terrainHeight(wx, wz), lz);
+        uvs.push(lx / 7, lz / 7);
+        const trail = 1 - Math.min(1, Math.max(0, (trailDistance(wx, wz) - 5) / 6));
+        const variation = hash(wx, wz) * 0.06;
+        colors.push(
+          0.32 + trail * 0.23 + variation,
+          0.39 + trail * 0.06 + variation,
+          0.22 + trail * 0.1 + variation,
+          1,
+        );
+      }
+    for (let z = 0; z < resolution; z++)
+      for (let x = 0; x < resolution; x++) {
+        const i = z * (resolution + 1) + x;
+        indices.push(i, i + 1, i + resolution + 1, i + 1, i + resolution + 2, i + resolution + 1);
+      }
+    VertexData.ComputeNormals(positions, indices, normals);
+    const data = new VertexData();
+    data.positions = positions;
+    data.indices = indices;
+    data.normals = normals;
+    data.colors = colors;
+    data.uvs = uvs;
+    const mesh = new Mesh(`sector ${sx},${sz}`, this.scene);
+    data.applyToMesh(mesh);
+    mesh.position.set(sx * size, 0, sz * size);
+    mesh.material = this.terrainMaterial;
+    mesh.receiveShadows = true;
+    mesh.freezeWorldMatrix();
+    const collision = near
+      ? new PhysicsAggregate(
+          mesh,
+          PhysicsShapeType.MESH,
+          { mass: 0, friction: 0.8, restitution: 0.05 },
+          this.scene,
+        )
+      : undefined;
+    const trees: Mesh[] = [],
+      props: PhysicsAggregate[] = [];
+    const matrices: number[] = [],
+      trunks: number[] = [];
+    for (let i = 0; i < (near ? 130 : 60); i++) {
+      const x = (sx + hash(i + sx * 37, sz * 19)) * size,
+        z = (sz + hash(i + 98, sx * 23 + sz)) * size;
+      if (
+        trailDistance(x, z) < 14 ||
+        jumps.some((j) => Math.abs(j.x - x) < j.width + 9 && Math.abs(j.z - z) < j.length + 15)
+      )
+        continue;
+      const h = 7 + hash(i, sx + sz * 7) * 10,
+        y = terrainHeight(x, z),
+        scale = h / 10;
+      Matrix.Compose(
+        new Vector3(scale, scale, scale),
+        Quaternion.RotationAxis(Vector3.Up(), hash(i, z) * 6),
+        new Vector3(x, y, z),
+      ).copyToArray(matrices, matrices.length);
+      Matrix.Compose(
+        new Vector3(scale, scale, scale),
+        Quaternion.Identity(),
+        new Vector3(x, y, z),
+      ).copyToArray(trunks, trunks.length);
+      if (near) {
+        const trunkCollider = MeshBuilder.CreateCylinder(
+          'tree collider',
+          { height: h * 0.65, diameter: 0.65 * scale, tessellation: 6 },
+          this.scene,
+        );
+        trunkCollider.position.set(x, y + h * 0.325, z);
+        trunkCollider.isVisible = false;
+        props.push(
+          new PhysicsAggregate(
+            trunkCollider,
+            PhysicsShapeType.CYLINDER,
+            { mass: 0, friction: 0.7 },
+            this.scene,
+          ),
+        );
+      }
+    }
+    const layers: Mesh[] = [];
+    for (let layer = 0; layer < 3; layer++) {
+      const cone = MeshBuilder.CreateCylinder(
+        'pine layer',
+        { height: 4.8 - layer * 0.6, diameterTop: 0, diameterBottom: 4.7 - layer, tessellation: 7 },
+        this.scene,
+      );
+      cone.position.y = 4 + layer * 2;
+      layers.push(cone);
+    }
+    const canopy = Mesh.MergeMeshes(layers, true)!;
+    canopy.name = `pine batch ${sx},${sz}`;
+    canopy.material = this.foliage;
+    const trunk = MeshBuilder.CreateCylinder(
+      'trunk batch',
+      { height: 6, diameter: 0.45, tessellation: 5 },
+      this.scene,
+    );
+    trunk.bakeTransformIntoVertices(Matrix.Translation(0, 3, 0));
+    trunk.material = this.bark;
+    if (matrices.length) {
+      canopy.thinInstanceSetBuffer('matrix', new Float32Array(matrices), 16);
+      trunk.thinInstanceSetBuffer('matrix', new Float32Array(trunks), 16);
+    } else {
+      canopy.setEnabled(false);
+      trunk.setEnabled(false);
+    }
+    trees.push(canopy, trunk);
+    if (near) {
+      this.addCaster(canopy);
+      this.addCaster(trunk);
+      const blades = new Mesh(`grass batch ${sx},${sz}`, this.scene),
+        gd = new VertexData();
+      gd.positions = [-0.3, 0, 0, 0.1, 0.75, 0, 0.18, 0, 0, 0, 0, -0.2, 0, 0.5, 0.06, 0, 0, 0.2];
+      gd.indices = [0, 1, 2, 3, 4, 5];
+      const gn: number[] = [];
+      VertexData.ComputeNormals(gd.positions, gd.indices, gn);
+      gd.normals = gn;
+      gd.applyToMesh(blades);
+      blades.material = this.grassMaterial;
+      const grassMatrices: number[] = [];
+      for (let i = 0; i < 2200; i++) {
+        const x = (sx + hash(i + 500, sz * 37)) * size,
+          z = (sz + hash(i + 9500, sx * 29)) * size;
+        if (trailDistance(x, z) < 9) continue;
+        const scale = 0.6 + hash(i, z);
+        Matrix.Compose(
+          new Vector3(scale, scale, scale),
+          Quaternion.RotationAxis(Vector3.Up(), i),
+          new Vector3(x, terrainHeight(x, z) - 0.08, z),
+        ).copyToArray(grassMatrices, grassMatrices.length);
+      }
+      if (grassMatrices.length)
+        blades.thinInstanceSetBuffer('matrix', new Float32Array(grassMatrices), 16);
+      trees.push(blades);
+      for (let i = 0; i < 7; i++) {
+        const x = (sx + hash(i + 370, sz)) * size,
+          z = (sz + hash(i + 1270, sx)) * size;
+        if (trailDistance(x, z) < 16) continue;
+        const rock = MeshBuilder.CreateIcoSphere(
+          'granite outcrop',
+          { radius: 1, subdivisions: 1, flat: true },
+          this.scene,
+        );
+        rock.scaling.set(1.5 + hash(i, sx) * 2.5, 1 + hash(i, sz) * 1.5, 2.2);
+        rock.position.set(x, terrainHeight(x, z) + 0.2, z);
+        rock.rotation.y = i;
+        rock.material = this.rockMaterial;
+        rock.receiveShadows = true;
+        props.push(
+          new PhysicsAggregate(
+            rock,
+            PhysicsShapeType.CONVEX_HULL,
+            { mass: 0, friction: 0.8 },
+            this.scene,
+          ),
+        );
+        this.addCaster(rock);
+      }
+    }
+    this.sectors.set(sectorKey({ x: sx, z: sz }), { mesh, trees, collision, props, near });
+  }
+}
