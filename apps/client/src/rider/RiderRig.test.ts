@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { MeshBuilder, NullEngine, Scene, Vector3, VertexBuffer } from '@babylonjs/core';
+import {
+  MeshBuilder,
+  NullEngine,
+  Scene,
+  TransformNode,
+  Vector3,
+  VertexBuffer,
+} from '@babylonjs/core';
 import { RiderRig } from './RiderRig';
 import { riderAnatomy as anatomy } from './RiderAnatomy';
 import { DriverCharacter } from './DriverCharacter';
+import { collisionHeight } from '@brumbrum/world-format';
 
 describe('articulated mesh rider', () => {
   let engine: NullEngine | undefined, scene: Scene | undefined;
@@ -190,5 +198,47 @@ describe('articulated mesh rider', () => {
     expect(rider.parts.get('pelvis')!.mesh.position.z).toBeLessThan(neutral.z - 0.12);
     rider.reset();
     expect(Vector3.Distance(rider.parts.get('pelvis')!.mesh.position, neutral)).toBeLessThan(0.001);
+  });
+  it('sweeps one foot for rollback while hands and the other boot keep their contacts', () => {
+    const rider = create();
+    (rider.root.parent as TransformNode).position.y = collisionHeight(0, 0) + 0.5;
+    const endpoint = (name: string, direction: number) => {
+      const part = rider.parts.get(name)!;
+      return Vector3.TransformCoordinates(
+        new Vector3(0, (direction * part.height) / 2, 0),
+        part.mesh.computeWorldMatrix(true),
+      );
+    };
+    rider.pose(0, 0, 0, 0, 0, 2);
+    const handL = endpoint('forearm-1', -1),
+      handR = endpoint('forearm1', -1),
+      peg = endpoint('shin1', -1);
+    for (let i = 0; i < 120; i++) rider.pose(0, -1, 0, 1, 0, 1 / 60, 0, 0, true, 1);
+    const feet: Vector3[] = [],
+      hips: Vector3[] = [];
+    for (let i = 0; i < 120; i++) {
+      rider.pose(0, -1, 0, 1, 0, 1 / 60, 0, 0, true, 1);
+      feet.push(endpoint('shin-1', -1));
+      hips.push(rider.parts.get('pelvis')!.mesh.position.clone());
+      expect(Vector3.Distance(endpoint('forearm-1', -1), handL)).toBeLessThan(0.001);
+      expect(Vector3.Distance(endpoint('forearm1', -1), handR)).toBeLessThan(0.001);
+      expect(Vector3.Distance(endpoint('shin1', -1), peg)).toBeLessThan(0.001);
+      for (const side of [-1, 1]) {
+        expect(
+          Vector3.Distance(endpoint(`thigh${side}`, -1), endpoint(`shin${side}`, 1)),
+        ).toBeLessThan(0.001);
+      }
+    }
+    expect(Math.max(...feet.map((p) => p.z)) - Math.min(...feet.map((p) => p.z))).toBeGreaterThan(
+      0.24,
+    );
+    expect(Math.max(...feet.map((p) => p.y)) - Math.min(...feet.map((p) => p.y))).toBeGreaterThan(
+      0.055,
+    );
+    expect(Math.max(...hips.map((p) => p.y)) - Math.min(...hips.map((p) => p.y))).toBeLessThan(
+      0.06,
+    );
+    rider.pose(0, 10, 1, 0, 0, 2, 0, 0, false, 0);
+    expect(rider.parts.get('shin-1')!.mesh.metadata.footPlantBlend).toBeLessThan(0.001);
   });
 });

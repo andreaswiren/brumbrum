@@ -3,10 +3,12 @@ import { snowAmount, snowTrailDistance } from './snow';
 import { rivers, riverTerrainHeight, riverWaterAt } from './rivers';
 import { railwayTerrainHeight } from './railway';
 import { timberTerrainHeight } from './timber';
+import { bridgeRoadDistance, bridgeRoadTerrainHeight } from './bridge-roads';
 export * from './snow';
 export * from './rivers';
 export * from './railway';
 export * from './timber';
+export * from './bridge-roads';
 export interface WorldPosition {
   x: number;
   y: number;
@@ -97,6 +99,7 @@ export function trailCenter(z: number): number {
 }
 export function trailDistance(x: number, z: number): number {
   return Math.min(
+    bridgeRoadDistance(x, z),
     Math.abs(x - trailCenter(z)),
     Math.abs(x - 72 - Math.sin((z - 210) * 0.008) * 25),
     Math.abs(x + 100),
@@ -105,7 +108,7 @@ export function trailDistance(x: number, z: number): number {
     snowAmount(x, z) > 0.1 ? snowTrailDistance(x, z) : Infinity,
   );
 }
-export function terrainHeight(x: number, z: number): number {
+function landscapeHeight(x: number, z: number): number {
   const clearing = 1 - Math.exp(-(x * x) / 8000);
   let h = Math.sin(z * 0.015) * 2.3 + Math.sin(z * 0.043) * 0.55;
   h += clearing * (12 + 12 * Math.sin(x * 0.012 + z * 0.008) + 6 * Math.cos(z * 0.018 - x * 0.011));
@@ -144,8 +147,18 @@ export function terrainHeight(x: number, z: number): number {
   h = nearLake ? Math.min(h, riverHeight) : riverHeight;
   h = timberTerrainHeight(x, z, h);
   const railBlend = Math.max(0, Math.min(1, (lakeDistance - 1.45) / 0.25));
-  const railHeight = nearLake ? h : railwayTerrainHeight(x, z, h);
-  return h + (railHeight - h) * railBlend * railBlend * (3 - 2 * railBlend) + boundaryHeight(x, z);
+  const railHeight = railwayTerrainHeight(x, z, h);
+  // Protect the shoreline against fill, while still cutting hillside material
+  // above the railway. Suppressing both operations used to bury lake-side rails.
+  const railInfluence = railHeight < h ? 1 : railBlend * railBlend * (3 - 2 * railBlend);
+  return h + (railHeight - h) * railInfluence + boundaryHeight(x, z);
+}
+export function terrainHeight(x: number, z: number): number {
+  const height = landscapeHeight(x, z);
+  if (bridgeRoadDistance(x, z) >= 38) return height;
+  return waterAt(x, z) === undefined
+    ? bridgeRoadTerrainHeight(x, z, height, landscapeHeight)
+    : height;
 }
 /** Exact interpolation of the near terrain triangles, including negative sectors. */
 export function collisionHeight(x: number, z: number): number {

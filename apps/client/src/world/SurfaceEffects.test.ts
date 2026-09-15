@@ -10,7 +10,8 @@ import {
 import { SurfaceEffects } from './SurfaceEffects';
 import type { Motorcycle } from '../vehicles/Motorcycle';
 
-vi.mock('@brumbrum/world-format', () => ({
+vi.mock('@brumbrum/world-format', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@brumbrum/world-format')>()),
   collisionHeight: (x: number, z: number) => x * 0.4 - z * 0.3,
   waterAt: () => undefined,
 }));
@@ -69,6 +70,27 @@ function fixture(kind: Motorcycle['kind']) {
 }
 
 describe('visible tyre spray', () => {
+  it('suppresses railway dust per wheel while tyres on adjacent dirt keep spraying', () => {
+    const { engine, scene, vehicle, effects, dust, soil } = fixture('atv');
+    try {
+      vehicle.visual.chassis.position.set(1100, 40 + 0.22 + vehicle.tune.wheelRadius, 0);
+      vehicle.visual.wheels[0].position.set(0, 0, 0);
+      vehicle.visual.wheels[1].position.set(5, 0, 0);
+      effects.update(vehicle, 1);
+      expect(dust.emitRate).toBe(0);
+      expect(soil.emitRate).toBe(0);
+      expect(
+        (scene.getParticleSystemById('wheel 1 surface spray') as ParticleSystem).emitRate,
+      ).toBeGreaterThan(0);
+      // Terrain below an elevated track can still throw dirt.
+      vehicle.visual.chassis.position.y -= 4;
+      effects.update(vehicle, 1);
+      expect(dust.emitRate).toBeGreaterThan(0);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
   it.each(['bike', 'atv', 'monster', 'snowmobile'] as const)(
     'throws real dust and soil during ordinary %s driving',
     (kind) => {

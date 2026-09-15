@@ -31,6 +31,7 @@ import {
   snowAmount,
   railwayClearing,
   isTimberFootprint,
+  bridgeRoadClearing,
 } from '@brumbrum/world-format';
 interface Sector {
   mesh: Mesh;
@@ -262,11 +263,13 @@ export class TerrainWorld {
         waterAt(x, z) !== undefined ||
         railwayClearing(x, z) ||
         isTimberFootprint(x, z, 5) ||
+        bridgeRoadClearing(x, z, 5) ||
         trailDistance(x, z) < 14 ||
         jumps.some((j) => Math.abs(j.x - x) < j.width + 9 && Math.abs(j.z - z) < j.length + 15)
       )
         continue;
-      const h = i % 7 === 0 ? 3 + hash(i, sx + sz * 7) * 3 : 7 + hash(i, sx + sz * 7) * 10,
+      const growth = hash(i, sx + sz * 7);
+      const h = i % 7 === 0 ? 3 + growth * 3 : i % 3 === 0 ? 20 + growth * 14 : 10 + growth * 10,
         y = collisionHeight(x, z) - 0.3,
         scale = h / 10;
       const id = `${sx},${sz}:${i}`;
@@ -401,7 +404,8 @@ export class TerrainWorld {
           waterAt(x, z) !== undefined ||
           snowAmount(x, z) > 0.4 ||
           railwayClearing(x, z) ||
-          isTimberFootprint(x, z, 2)
+          isTimberFootprint(x, z, 2) ||
+          bridgeRoadClearing(x, z, 2)
         )
           continue;
         const scale = 0.6 + hash(i, z) * 0.5;
@@ -421,7 +425,8 @@ export class TerrainWorld {
           trailDistance(x, z) < 20 ||
           waterAt(x, z) !== undefined ||
           railwayClearing(x, z) ||
-          isTimberFootprint(x, z, 8)
+          isTimberFootprint(x, z, 8) ||
+          bridgeRoadClearing(x, z, 8)
         )
           continue;
         const large = i % 4 === 0 ? 2 : 1;

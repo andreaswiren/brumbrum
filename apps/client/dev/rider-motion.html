@@ -47,6 +47,9 @@
         <option value="1">Normal speed</option>
         <option value="0.35">Slow motion</option>
       </select>
+      <p>
+        <button id="rollback">Foot-powered rollback</button><button id="ride">Seated idle</button>
+      </p>
       <p id="phase">Loading rider…</p>
     </aside>
     <script type="module">
@@ -67,7 +70,7 @@
       } from '@babylonjs/core';
       import HavokPhysics from '@babylonjs/havok';
       import havokWasm from '@babylonjs/havok/lib/esm/HavokPhysics.wasm?url';
-      import { RiderRig } from '/src/rider/RiderRig.ts';
+      import { createBikeVisual } from '/src/vehicles/BikeVisual.ts';
       import { collisionHeight } from '@brumbrum/world-format';
       const canvas = document.querySelector('#view'),
         engine = new Engine(canvas, true),
@@ -105,15 +108,19 @@
       ground.receiveShadows = true;
       const havok = await HavokPhysics({ locateFile: () => havokWasm });
       scene.enablePhysics(new Vector3(0, -9.81, 0), new HavokPlugin(true, havok));
-      const chassis = MeshBuilder.CreateBox('anchor', {}, scene);
-      chassis.isVisible = false;
+      const visual = createBikeVisual(scene),
+        chassis = visual.chassis;
       chassis.position.set(0, collisionHeight(0, 12) + 0.5, 12);
       chassis.rotationQuaternion = Quaternion.Identity();
-      const rig = new RiderRig(scene, chassis);
+      const rig = visual.riderRig;
       await rig.loadCharacter();
       rig.meshes.forEach((mesh) => shadows.addShadowCaster(mesh));
-      let paused = false;
+      visual.meshes.forEach((mesh) => shadows.addShadowCaster(mesh));
+      let paused = false,
+        mode = 'recovery';
       function replay() {
+        mode = 'recovery';
+        chassis.rotationQuaternion = Quaternion.Identity();
         paused = false;
         document.querySelector('#pause').textContent = 'Pause';
         rig.reset();
@@ -123,6 +130,15 @@
         rig.beginRecovery();
       }
       document.querySelector('#replay').onclick = replay;
+      function riding(push) {
+        camera.alpha = (-2 * Math.PI) / 3;
+        mode = push ? 'rollback' : 'idle';
+        paused = false;
+        document.querySelector('#pause').textContent = 'Pause';
+        rig.reset();
+      }
+      document.querySelector('#rollback').onclick = () => riding(true);
+      document.querySelector('#ride').onclick = () => riding(false);
       document.querySelector('#pause').onclick = () => {
         paused = !paused;
         document.querySelector('#pause').textContent = paused ? 'Resume' : 'Pause';
@@ -133,12 +149,35 @@
           Math.min(0.04, engine.getDeltaTime() / 1000) *
           Number(document.querySelector('#speed').value);
         if (!paused) {
-          const state = rig.updateRecovery(
-            dt,
-            new Vector3(0, 0, 32),
-            new Vector3(1, collisionHeight(1, 32), 32),
-          );
-          document.querySelector('#phase').textContent = state.phase;
+          if (mode !== 'recovery') {
+            chassis.rotationQuaternion = Quaternion.RotationAxis(
+              Vector3.Forward(),
+              rig.resting * 0.22,
+            );
+            rig.pose(
+              0,
+              mode === 'rollback' ? -1.05 : 0,
+              0,
+              0,
+              0,
+              dt,
+              0,
+              0,
+              true,
+              mode === 'rollback' ? 1 : 0,
+            );
+            document.querySelector('#phase').textContent =
+              mode === 'rollback'
+                ? 'Rollback · left foot pushes, right foot on peg · vehicle held for inspection'
+                : 'Seated idle · left foot supports motorcycle';
+          } else {
+            const state = rig.updateRecovery(
+              dt,
+              new Vector3(0, 0, 32),
+              new Vector3(1, collisionHeight(1, 32), 32),
+            );
+            document.querySelector('#phase').textContent = state.phase;
+          }
         }
         camera.target.copyFrom(rig.position).addInPlace(new Vector3(0, 0.1, 0));
         scene.render();

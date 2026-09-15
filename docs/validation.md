@@ -4,7 +4,7 @@ Validated locally on Windows with Node.js 22.14, real Havok WASM and the Codex C
 
 ## Automated
 
-`npm test`: 118 tests across world geometry, keyboard/Xbox mapping, real vehicle physics, interpolation, camera, rider motion/skinning, vehicle meshes, snow, scoring, graphics preferences, imported props, tree destruction and surface particles.
+`npm test`: 139 tests across 36 files cover world geometry, keyboard/Xbox mapping, real vehicle physics, interpolation, camera, rider motion/skinning, vehicle meshes, snow, scoring, graphics preferences, imported props, tree destruction and surface particles.
 
 Physics coverage includes all four vehicles accelerating/steering/resetting, spring equilibrium, natural takeoff/landing, braking, tilt, wheelies, charged preload, hard landings preserving speed, no airborne steering, penetration recovery, nose-down recovery, physical ragdoll cleanup and automatic stand/walk/pickup recovery, long-distance teleports, the boundary ramp/return force, hydroplaning and 30-vs-120-render-FPS consistency.
 
@@ -15,6 +15,8 @@ Steering regressions check separate suspension/axle pivots on the bike, ATV and 
 `npm run typecheck` and `npm run build` pass. The production entry is approximately 6.55 MB uncompressed (1.46 MB gzip), plus 2.09 MB WASM and local art. Vite reports a large-chunk warning; it is not suppressed. `npm audit` reports zero known vulnerabilities at validation time.
 
 ## Browser
+
+The shadow stability preview `/dev/shadows.html` varies the visible camera FOV while keeping its view still. Cascade scale variation fell from 28.205% to 0.000% with the stable projection; registration and foliage casters remained present. The fixed mode was checked in both WebGPU and WebGL2 without runtime errors. Bridge road overviews show each bridge joining the existing trail network; automated checks verify full-width deck seams, dry connectors, continuous grading, and 15,360 terrain-clearance samples across both railway rails. Additional real-Havok tests cover throttle-plus-brake stopping, slopes, braking slide rotation, brake-to-reverse delay, reverse steering and speed limits across all vehicles. Per-wheel particle tests suppress dust on railway/deck surfaces while retaining it on loose ground below a bridge.
 
 The production HTTP/WebSocket server was tested with two browser clients, one joining the generated LAN invitation. Both showed the same room membership, the remote rider and name rendered in the world, Meet riders placed them nearby, and Leave room removed the peer. Neither client reported runtime errors. Eight server tests cover real WebSocket/HTTP behavior; seven remote-render/interpolation tests cover smoothing, bounded extrapolation, resets, vehicle changes and disposal. Bridges and ramps have real Havok deck-ray tests, and falling-tree tests cover vehicle contact, rapid toppling and terrain clearance. `/dev/world-landmarks.html` provides station, river bridge and timber jump views for visual review.
 

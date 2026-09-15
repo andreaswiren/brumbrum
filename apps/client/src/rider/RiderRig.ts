@@ -18,6 +18,8 @@ import { riderConfig } from '@brumbrum/configuration';
 import { collisionHeight } from '@brumbrum/world-format';
 import { enforceFloor } from '../physics/FloorGuard';
 import { DriverCharacter } from './DriverCharacter';
+import { RiderFootPush } from './RiderFootPush';
+import { riderGroundHeight } from './RiderGroundContact';
 import {
   RiderMotion,
   bendLimb,
@@ -49,6 +51,7 @@ export class RiderRig {
   readonly constraints: Physics6DoFConstraint[] = [];
   private joints: Joint[] = [];
   private motion = new RiderMotion();
+  private footPush = new RiderFootPush();
   private character?: DriverCharacter;
   private recovery?: RiderRecovery;
   private recoveryStart = new Map<string, { position: Vector3; rotation: Quaternion }>();
@@ -213,6 +216,7 @@ export class RiderRig {
     );
   }
   setVehicle(stance: RidingStance): void {
+    this.footPush.reset();
     this.motion.stance = stance;
     this.motion.reset();
     this.pose(0, 0, 0, 0, 0, 1, 0, 0, false);
@@ -230,15 +234,30 @@ export class RiderRig {
     preload = 0,
     weight = 0,
     grounded = true,
+    footPushing = 0,
   ): void {
     if (this.active) return;
     this.root.computeWorldMatrix(true);
-    const footWorld = Vector3.TransformCoordinates(v(-0.3, 0, -0.035), this.root.getWorldMatrix());
-    const plantPitch = 0.8;
+    const stroke = this.footPush.update(
+      this.motion.stance === 'bike' ? footPushing : 0,
+      speed,
+      grounded,
+      dt,
+    );
+    const footWorld = Vector3.TransformCoordinates(
+      v(-0.3, 0, -0.035 + stroke.z),
+      this.root.getWorldMatrix(),
+    );
+    const plantPitch = stroke.pitch;
+    const restingHeight =
+      this.motion.stance === 'bike' && grounded && Math.abs(speed) < 3
+        ? riderGroundHeight(this.scene, footWorld)
+        : collisionHeight(footWorld.x, footWorld.z);
     footWorld.y =
-      collisionHeight(footWorld.x, footWorld.z) +
+      restingHeight +
       anatomy.ankleToSole * Math.cos(plantPitch) +
-      anatomy.ankleToToe * Math.sin(plantPitch);
+      anatomy.ankleToToe * Math.sin(plantPitch) +
+      stroke.lift;
     const plantedFootTarget = Vector3.TransformCoordinates(
       footWorld,
       Matrix.Invert(this.root.getWorldMatrix()),
@@ -254,6 +273,7 @@ export class RiderRig {
       weight,
       grounded,
       this.motion.stance === 'bike' ? plantedFootTarget : undefined,
+      stroke.blend,
     );
     this.place('pelvis', hip.add(v(0, -0.13, 0)), hip.add(v(0, 0.13, 0)));
     this.place('torso', hip, neck);
@@ -387,6 +407,7 @@ export class RiderRig {
       part.mesh.rotationQuaternion!.copyFrom(part.home.rotation);
     }
     this.active = false;
+    this.footPush.reset();
     this.motion.reset();
     this.pose(0, 0, 0, 0, 0, 1, 0, 0, false);
   }

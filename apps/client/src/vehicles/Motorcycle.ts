@@ -45,6 +45,9 @@ export class Motorcycle {
   readonly compression: number[] = [];
   grounded = false;
   crashed = false;
+  reversing = false;
+  footPushing = 0;
+  private reverseHold = 0;
   surface: Surface = 'dirt';
   airtime = 0;
   lastAir = 0;
@@ -199,6 +202,9 @@ export class Motorcycle {
     }
   }
   reset(atSpawn = false): void {
+    this.reversing = false;
+    this.footPushing = 0;
+    this.reverseHold = 0;
     this.resetId++;
     if (atSpawn) {
       this.safe.set(0, 0, 12);
@@ -312,6 +318,9 @@ export class Motorcycle {
     this.submerged = water !== undefined && this.position.y < water - 0.3;
     this.submergedTime = this.submerged ? this.submergedTime + dt : 0;
     if (this.submerged) {
+      this.reversing = false;
+      this.footPushing = 0;
+      this.reverseHold = 0;
       // A flooded engine cannot propel along the lake bed. Recover to the nearest bank.
       body.setLinearVelocity(this.velocity.scale(Math.exp(-5 * dt)));
       body.setAngularVelocity(this.angularVelocity.scale(Math.exp(-5 * dt)));
@@ -355,7 +364,12 @@ export class Motorcycle {
     let contactCount = 0;
     const supportNormal = Vector3.Zero();
     const wheelieLoading =
-      this.kind !== 'monster' && input.pitch > 0.1 && input.throttle > 0.1 && this.speed > 2;
+      this.kind !== 'monster' &&
+      input.pitch > 0.1 &&
+      input.throttle > 0.1 &&
+      input.brake < 0.1 &&
+      !input.rearBrake &&
+      this.speed > 2;
     for (let i = 0; i < this.mounts.length; i++) {
       const origin = Vector3.TransformCoordinates(this.mounts[i], mesh.getWorldMatrix());
       const rayLength = this.tune.suspensionLength * rollFactor + tireSupport;
@@ -497,7 +511,13 @@ export class Motorcycle {
         this.crashed = true;
       // Landing assistance redirects travel along the ground. Restore modestly
       // reduced horizontal momentum once per real jump, before traction acts.
-      if (!this.crashed && this.airtime > 0.25 && uprightAlignment > 0.35 && input.brake < 0.1) {
+      if (
+        !this.crashed &&
+        this.airtime > 0.25 &&
+        uprightAlignment > 0.35 &&
+        input.brake < 0.1 &&
+        !input.rearBrake
+      ) {
         const entrySpeed = Math.hypot(this.airborneVelocity.x, this.airborneVelocity.z);
         const retained = Math.min(this.tune.maxSpeed, entrySpeed * 0.94);
         if (retained > this.speed && entrySpeed > 2) {
@@ -522,6 +542,9 @@ export class Motorcycle {
     this.impactVelocity = this.velocity.y;
     if (this.position.y < terrainHeight(this.position.x, this.position.z) - 20) this.reset();
     if (this.crashed) {
+      this.reversing = false;
+      this.footPushing = 0;
+      this.reverseHold = 0;
       const rider = this.visual.riderRig;
       this.crashElapsed += dt;
       if (!rider.recovering) {
@@ -573,11 +596,10 @@ export class Motorcycle {
       }
       return;
     }
-    const speedForward = Vector3.Dot(this.velocity, forward),
-      surface =
-        this.kind === 'snowmobile' && this.surface === 'snow'
-          ? { ...surfaces.snow, grip: 0.95, resistance: 0.18 }
-          : surfaces[this.surface];
+    const surface =
+      this.kind === 'snowmobile' && this.surface === 'snow'
+        ? { ...surfaces.snow, grip: 0.95, resistance: 0.18 }
+        : surfaces[this.surface];
     this.distance += this.speed * dt;
     this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
     if (this.grounded) {
@@ -586,31 +608,63 @@ export class Motorcycle {
         .normalize();
       const groundRight = Vector3.Cross(this.lastContactNormal, groundForward).normalize();
       const groundSpeed = Vector3.Dot(this.velocity, groundForward);
+      // The service brake wins over the accelerator, including simultaneous triggers.
+      // A rear brake still permits some drive for a deliberate power slide.
+      const serviceBrake = Math.max(0, Math.min(1, input.brake));
+      const reverseRequested = serviceBrake > 0.25 && input.throttle < 0.1 && !input.rearBrake;
+      if (!reverseRequested) {
+        this.reversing = false;
+        this.reverseHold = 0;
+      } else if (!this.reversing) {
+        this.reverseHold =
+          this.speed < 0.65 && Math.abs(groundSpeed) < 0.65 ? this.reverseHold + dt : 0;
+        this.reversing = this.reverseHold >= 0.3;
+      }
+      this.footPushing = this.reversing && this.kind === 'bike' ? serviceBrake : 0;
+      const driveInput =
+        input.throttle * Math.max(0, 1 - serviceBrake * 4) * (input.rearBrake ? 0.3 : 1);
       const throttleForce =
-        input.throttle *
+        driveInput *
         this.tune.driveForce *
         Math.max(0, 1 - Math.max(0, groundSpeed) / this.tune.maxSpeed);
       const hillHold = input.throttle === 0 && this.speed < 1.5 ? 0.16 : 0;
-      const brake =
-        (Math.max(input.brake, hillHold) + (input.rearBrake ? 0.65 : 0)) * this.tune.brakeForce;
+      const brake = this.reversing
+        ? 0
+        : Math.min(1.25, Math.max(serviceBrake, hillHold) + (input.rearBrake ? 0.65 : 0)) *
+          this.tune.brakeForce;
       const resistance = surface.resistance * this.tune.mass * groundSpeed;
       const netDrive = throttleForce * surface.grip - resistance;
       const braking =
-        Math.sign(speedForward) *
-        Math.min(brake, ((Math.abs(speedForward) * this.tune.mass) / dt) * 0.4);
+        Math.sign(groundSpeed) *
+        Math.min(brake, ((Math.abs(groundSpeed) * this.tune.mass) / dt) * 0.4);
+      const reverseLimit = this.kind === 'bike' ? 1.05 : this.kind === 'snowmobile' ? 6 : 4;
+      const reverseAcceleration = this.kind === 'bike' ? 3 : 8;
+      const reverseDrive =
+        this.tune.mass *
+        (Math.max(
+          -reverseAcceleration,
+          Math.min(reverseAcceleration, (-reverseLimit * serviceBrake - groundSpeed) * 5),
+        ) -
+          physics.gravity * groundForward.y);
       body.applyForce(
         groundForward.scale(
-          (wheelieLoading && netDrive > 0 ? netDrive * 0.75 : netDrive) -
-            braking +
-            Math.max(0, groundForward.y) *
-              this.tune.mass *
-              -physics.gravity *
-              input.throttle *
-              0.95,
+          this.reversing
+            ? reverseDrive
+            : (wheelieLoading && netDrive > 0 ? netDrive * 0.75 : netDrive) -
+                braking +
+                Math.max(0, groundForward.y) *
+                  this.tune.mass *
+                  -physics.gravity *
+                  driveInput *
+                  0.95,
         ),
         this.position,
       );
       const lateral = Vector3.Dot(this.velocity, groundRight);
+      const slideBrake = this.reversing
+        ? 0
+        : Math.min(1, serviceBrake * 0.65 + (input.rearBrake ? 1 : 0));
+      const slideSpeed = Math.min(1, Math.max(0, (this.speed - 1.5) / 6));
       // Progressively let the rear step out during a committed dirt corner.
       const cornerSlide =
         this.kind === 'bike'
@@ -623,15 +677,26 @@ export class Motorcycle {
             this.tune.lateralGrip *
             surface.grip *
             (1 - cornerSlide * (this.surface === 'asphalt' ? 0.28 : 0.56)) *
-            (input.rearBrake ? 0.35 : 1),
+            (1 - slideBrake * slideSpeed * 0.78),
         ),
         this.position,
       );
+      // Scrub sideways speed with the service brake as well, so a broadside skid
+      // cannot evade braking. Rear locking retains lateral travel for sliding.
+      const lateralBraking =
+        Math.sign(lateral) *
+        Math.min(
+          serviceBrake * this.tune.brakeForce * 0.32,
+          ((Math.abs(lateral) * this.tune.mass) / dt) * 0.4,
+        );
+      body.applyForce(groundRight.scale(-lateralBraking), this.position);
       const targetYaw =
         input.steer *
+        (groundSpeed < -0.2 ? -1 : 1) *
         this.tune.steerRate *
         Math.min(1, this.speed / 4) *
-        (0.55 + 0.45 / (1 + this.speed / 15));
+        (0.55 + 0.45 / (1 + this.speed / 15)) *
+        (1 + slideBrake * slideSpeed * 1.65);
       const maxLean =
         this.kind === 'monster'
           ? 0.06
@@ -697,6 +762,9 @@ export class Motorcycle {
         this.safeYaw = this.yaw;
       }
     } else {
+      this.reversing = false;
+      this.footPushing = 0;
+      this.reverseHold = 0;
       const pitchRate = Vector3.Dot(this.angularVelocity, right);
       // A cornering input held over a bump is not a request for an airborne roll.
       // Release/reapply or reverse steering to deliberately tilt during a real jump.
@@ -751,6 +819,7 @@ export class Motorcycle {
       this.preloadCharge,
       input.pitch,
       this.grounded,
+      this.footPushing,
     );
     if (this.kind === 'snowmobile') animateSnowmobile(this.visual, dt, this.speed, input.steer);
   }

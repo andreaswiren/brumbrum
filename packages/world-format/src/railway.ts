@@ -1,4 +1,5 @@
 import { riverWaterAt } from './rivers';
+import { world } from '@brumbrum/configuration';
 
 export const railway = { radiusX: 1100, radiusZ: 900, station: { x: 0, z: -918 } };
 export function railwayPoint(angle: number) {
@@ -18,11 +19,14 @@ export function railwayTerrainHeight(x: number, z: number, height: number): numb
   // Leave the channel open under railway trestles.
   if (riverWaterAt(x, z) !== undefined) return height;
   const station = Math.max(Math.abs(x) - 32, Math.abs(z + 923) - 20, 0);
-  const edge = Math.min(distance - 5, station);
+  // Include every terrain-grid vertex that can contribute to a triangle under
+  // the ballast. A narrow centre-line cut leaves diagonal triangles poking up.
+  const corridor = 2.5 + (world.sectorSize / world.nearResolution) * Math.SQRT2;
+  const edge = Math.min(distance - corridor, station);
   if (edge > 60) return height;
   const t = Math.max(0, Math.min(1, edge / 60));
   const blend = t * t * (3 - 2 * t);
-  return (station < distance - 5 ? 32 : point.y) * (1 - blend) + height * blend;
+  return (station < distance - corridor ? 32 : point.y) * (1 - blend) + height * blend;
 }
 export function railwayClearing(x: number, z: number): boolean {
   return railwayDistance(x, z) < 9 || (Math.abs(x) < 40 && Math.abs(z + 923) < 30);

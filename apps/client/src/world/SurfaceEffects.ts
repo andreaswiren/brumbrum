@@ -2,6 +2,7 @@ import { Color4, DynamicTexture, ParticleSystem, Scene, Vector3 } from '@babylon
 import type { Motorcycle } from '../vehicles/Motorcycle';
 import { collisionHeight, waterAt } from '@brumbrum/world-format';
 import { WaterEffects } from './WaterEffects';
+import { isSolidRidingSurface } from './RidingSurfaces';
 
 /** Reusable wheel emitters: old particles fade naturally when the surface changes. */
 export class SurfaceEffects {
@@ -91,6 +92,7 @@ export class SurfaceEffects {
       vehicle.surface !== 'asphalt' &&
       vehicle.surface !== 'ice';
     const forward = new Vector3(Math.sin(vehicle.yaw), 0, Math.cos(vehicle.yaw));
+    if (Vector3.Dot(vehicle.velocity, forward) < -0.2) forward.scaleInPlace(-1);
     const right = new Vector3(Math.cos(vehicle.yaw), 0, -Math.sin(vehicle.yaw));
     const lateral = Vector3.Dot(vehicle.velocity, right);
     const slide = vehicle.slideIntensity;
@@ -113,7 +115,9 @@ export class SurfaceEffects {
       const waterLevel = point ? waterAt(point.x, point.z) : undefined;
       const underwater =
         point && waterLevel !== undefined && point.y - vehicle.tune.wheelRadius < waterLevel - 0.1;
-      const active = enabled && !!wheel && vehicle.contacts[i] && (wet || !underwater);
+      const solid =
+        point && isSolidRidingSurface(point.x, point.y - vehicle.tune.wheelRadius, point.z);
+      const active = enabled && !!wheel && vehicle.contacts[i] && !solid && (wet || !underwater);
       const driven = vehicle.kind === 'bike' || vehicle.kind === 'snowmobile' ? i === 0 : i < 2;
       const wheelWeight = driven ? 1 : 0.32;
       const sizeScale = Math.min(2.1, Math.max(1, vehicle.tune.wheelRadius / 0.36));

@@ -95,6 +95,7 @@ export class RiderMotion {
     weight = 0,
     grounded = true,
     plantedFootTarget?: Vector3,
+    footPushing = 0,
   ) {
     const step = Math.max(0, dt),
       blend = 1 - Math.exp(-8 * step);
@@ -105,7 +106,9 @@ export class RiderMotion {
       throttle < 0.03 &&
       preload < 0.03 &&
       Math.abs(weight) < 0.15;
-    this.resting += ((idle ? 1 : 0) - this.resting) * (1 - Math.exp(-(idle ? 3.5 : 14) * step));
+    const support = this.stance === 'bike' && grounded ? Math.max(idle ? 1 : 0, footPushing) : 0;
+    this.resting +=
+      (support - this.resting) * (1 - Math.exp(-(support > this.resting ? 3.5 : 14) * step));
     this.idleTime += step;
     const plantedFoot = plantedFootTarget
       ? Vector3.Lerp(ridingContacts(this.stance, -1).foot, plantedFootTarget, this.resting)

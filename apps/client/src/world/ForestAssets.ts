@@ -83,7 +83,8 @@ export class ForestAssets {
     const groups: number[][] = [[], [], [], []];
     for (let offset = 0; offset < matrices.length; offset += 16) {
       const index = offset / 16;
-      const variant = index % 13 === 0 ? 3 : index % 3;
+      const scale = Math.hypot(matrices[offset], matrices[offset + 1], matrices[offset + 2]);
+      const variant = scale >= 2 ? 1 : index % 13 === 0 ? 3 : index % 3;
       groups[variant].push(...matrices.slice(offset, offset + 16));
     }
     const result = (groups[0].length ? (near ? this.near : this.far) : []).map((source) => {

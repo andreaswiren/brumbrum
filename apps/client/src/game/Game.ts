@@ -27,7 +27,11 @@ import { snowSpawn } from '@brumbrum/world-format';
 import type { VehicleKind } from '../vehicles/VehicleModels';
 import { VehicleInterpolation } from '../vehicles/VehicleInterpolation';
 import { SurfaceEffects } from '../world/SurfaceEffects';
-import { createGroundShadows, createGroundOcclusion } from '../world/GroundLighting';
+import {
+  createGroundShadows,
+  createGroundOcclusion,
+  updateGroundShadows,
+} from '../world/GroundLighting';
 import { GraphicsPipeline } from '../graphics/GraphicsPipeline';
 import { loadVisualSettings, type VisualSettings } from '../graphics/VisualSettings';
 import { GraphicsMenu } from '../ui/GraphicsMenu';
@@ -275,6 +279,7 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
   scene.onBeforeRenderObservable.add(() => {
     interpolation.render(vehicle, Math.min(1, remainder / physics.step));
     camera.update(frameDt);
+    updateGroundShadows(shadows, camera.camera);
     finishing?.focus(Vector3.Distance(camera.camera.position, vehicle.position));
     surfaceEffects.update(vehicle, input.actions.throttle);
   });
@@ -319,7 +324,9 @@ export async function startGame(canvas: HTMLCanvasElement): Promise<void> {
     multiplayer.update(dt, vehicle, score, input.actions.steer);
     audio.update(
       vehicle.speed,
-      input.actions.throttle,
+      vehicle.reversing && vehicle.kind !== 'bike'
+        ? input.actions.brake * 0.45
+        : input.actions.throttle,
       vehicle.grounded,
       vehicle.crashed,
       dt,

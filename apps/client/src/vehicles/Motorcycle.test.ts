@@ -107,9 +107,12 @@ describe('real Havok motorcycle simulation', () => {
     expect(vehicle.position.z).toBeLessThan(15);
     step({ ...idle, throttle: 1 }, 120);
     const moving = vehicle.speed;
-    step({ ...idle, brake: 1 }, 180);
+    for (let frame = 0; frame < 180 && vehicle.speed > 0.5; frame++) {
+      step({ ...idle, brake: 1 }, 1);
+    }
     expect(moving).toBeGreaterThan(5);
     expect(vehicle.speed).toBeLessThan(1);
+    expect(vehicle.reversing).toBe(false);
   });
   it('steers and a physical upside-down landing crashes', () => {
     vehicle.reset(true);
